@@ -58,7 +58,7 @@ func TestSurgeVersions(t *testing.T) {
 		!strings.Contains(newer.Content, "reality-public-key=SomePublicKeyBase64") {
 		t.Errorf("vless missing in 6.1:\n%s", newer.Content)
 	}
-	if !strings.Contains(newer.Content, "♻️ 自动选择 = smart,") {
+	if !strings.Contains(newer.Content, "自动选择 = smart,") {
 		t.Error("smart group missing")
 	}
 	if !strings.Contains(newer.Content, "[WireGuard wg-") || !strings.Contains(newer.Content, "client-id = 1/2/3") {
@@ -75,7 +75,7 @@ func TestSurgeVersions(t *testing.T) {
 	if strings.Contains(older.Content, "= vless,") || !hasWarning(older.Warnings, "US Reality", "6.0.0") {
 		t.Errorf("vless should be dropped on 5.10: %v", older.Warnings)
 	}
-	if !strings.Contains(older.Content, "♻️ 自动选择 = url-test,") || !hasWarning(older.Warnings, "♻️ 自动选择", "using url-test") {
+	if !strings.Contains(older.Content, "自动选择 = url-test,") || !hasWarning(older.Warnings, "自动选择", "using url-test") {
 		t.Error("smart should downgrade to url-test on 5.10")
 	}
 	if strings.Contains(older.Content, "AnyTLS =") {
@@ -126,7 +126,7 @@ func TestStash(t *testing.T) {
 	if doc.RuleProviders["Netflix"]["behavior"] != "classical" {
 		t.Errorf("providers: %v", doc.RuleProviders)
 	}
-	if doc.Rules[len(doc.Rules)-1] != "MATCH,🐟 漏网之鱼" {
+	if doc.Rules[len(doc.Rules)-1] != "MATCH,漏网之鱼" {
 		t.Errorf("last rule: %s", doc.Rules[len(doc.Rules)-1])
 	}
 	old := gen(t, capability.Target{Client: capability.Stash, Platform: "ios", Version: "3.0.0"})
@@ -139,7 +139,7 @@ func TestRegionGroups(t *testing.T) {
 	res := gen(t, capability.Target{Client: capability.Surge, Platform: "ios"})
 	// HK region group should contain the two HK nodes.
 	for _, line := range strings.Split(res.Content, "\n") {
-		if strings.HasPrefix(line, "🇭🇰 香港 = url-test") {
+		if strings.HasPrefix(line, "香港 = url-test") {
 			if !strings.Contains(line, "🇭🇰 HK 01") || !strings.Contains(line, "HK 02") {
 				t.Errorf("hk group: %s", line)
 			}
@@ -147,4 +147,111 @@ func TestRegionGroups(t *testing.T) {
 		}
 	}
 	t.Error("hk group not found")
+}
+
+func TestApplyOrder(t *testing.T) {
+	got := applyOrder([]string{"A", "B", "C", "D"}, []string{"C", "gone", "A"})
+	want := []string{"C", "A", "B", "D"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v want %v", got, want)
+	}
+}
+
+func TestTemplateDirectOnlyInFinal(t *testing.T) {
+	p := profile.Default()
+	for _, g := range p.Groups {
+		has := false
+		for _, m := range g.Members {
+			has = has || m == "DIRECT"
+		}
+		if has != (g.Name == "漏网之鱼") {
+			t.Errorf("group %s: DIRECT member = %v", g.Name, has)
+		}
+	}
+}
+
+func TestHosts(t *testing.T) {
+	p := profile.Default()
+	p.General.Hosts = []profile.Host{
+		{Domain: "router.lan", Value: "192.168.1.1"},
+		{Domain: "*.corp.example.com", Value: "server:10.0.0.53"},
+		{Domain: "intra.example.com", Value: "server:system"},
+		{Domain: "alias.example.com", Value: "real.example.com"},
+	}
+	nodes := loadNodes(t)
+	sg, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "ios"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[Host]\nrouter.lan = 192.168.1.1\n*.corp.example.com = server:10.0.0.53\nintra.example.com = server:system\nalias.example.com = real.example.com\n"} {
+		if !strings.Contains(sg.Content, want) {
+			t.Errorf("surge missing %q", want)
+		}
+	}
+	st, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Stash, Platform: "ios"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hosts map[string]string `yaml:"hosts"`
+		DNS   struct {
+			Policy map[string]string `yaml:"nameserver-policy"`
+		} `yaml:"dns"`
+	}
+	if err := yaml.Unmarshal([]byte(st.Content), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Hosts["router.lan"] != "192.168.1.1" || doc.DNS.Policy["*.corp.example.com"] != "10.0.0.53" || len(doc.Hosts) != 1 || len(doc.DNS.Policy) != 1 {
+		t.Errorf("stash hosts %v policy %v", doc.Hosts, doc.DNS.Policy)
+	}
+	if !hasWarning(st.Warnings, "intra.example.com", "system") || !hasWarning(st.Warnings, "alias.example.com", "alias") {
+		t.Errorf("warnings: %v", st.Warnings)
+	}
+	bad := profile.Default()
+	bad.General.Hosts = []profile.Host{{Domain: "a b", Value: "1.1.1.1"}}
+	if err := bad.Validate(); err == nil {
+		t.Error("expected validation error")
+	}
+}
+
+func TestGeneralExtra(t *testing.T) {
+	p := profile.Default()
+	p.General.Hosts = []profile.Host{{Domain: "router.lan", Value: "192.168.1.1"}, {Domain: "DOMAIN-SET:https://x/y.txt", Value: "server:https://dns.alidns.com/dns-query"}}
+	p.General.Extra = map[string]string{
+		"surge": "dns-server = 1.1.1.1\nshow-error-page-for-reject = true\n# note",
+		"stash": "dns:\n  fake-ip-filter:\n    - '*.lan'\nlog-level: warning\nexternal-controller: 127.0.0.1:9090",
+	}
+	nodes := loadNodes(t)
+	sg, _ := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}})
+	if strings.Count(sg.Content, "dns-server =") != 1 || !strings.Contains(sg.Content, "dns-server = 1.1.1.1\n") ||
+		!strings.Contains(sg.Content, "show-error-page-for-reject = true\n# note\n") {
+		t.Errorf("surge general:\n%s", sg.Content[:600])
+	}
+	if !strings.Contains(sg.Content, "DOMAIN-SET:https://x/y.txt = server:https://dns.alidns.com/dns-query") {
+		t.Error("surge rule-set host missing")
+	}
+	st, _ := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Stash, Platform: "ios"}})
+	var doc struct {
+		LogLevel string `yaml:"log-level"`
+		Ctl      string `yaml:"external-controller"`
+		Hosts    map[string]string
+		DNS      struct {
+			NS     []string `yaml:"nameserver"`
+			Filter []string `yaml:"fake-ip-filter"`
+		}
+	}
+	if err := yaml.Unmarshal([]byte(st.Content), &doc); err != nil {
+		t.Fatalf("%v\n%s", err, st.Content)
+	}
+	if doc.LogLevel != "warning" || doc.Ctl != "127.0.0.1:9090" || len(doc.DNS.NS) == 0 || len(doc.DNS.Filter) != 1 || doc.Hosts["router.lan"] == "" || len(doc.Hosts) != 1 {
+		t.Errorf("stash merge: %+v", doc)
+	}
+	if strings.Count(st.Content, "\nlog-level:") != 1 || !hasWarning(st.Warnings, "DOMAIN-SET:https://x/y.txt", "Surge-only") {
+		t.Errorf("dup keys or warning missing: %v", st.Warnings)
+	}
+	p.General.Extra["stash"] = "not: [valid"
+	st, _ = Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Stash, Platform: "ios"}})
+	if !hasWarning(st.Warnings, "Stash 追加 YAML", "ignored") {
+		t.Error("invalid extra should warn")
+	}
 }

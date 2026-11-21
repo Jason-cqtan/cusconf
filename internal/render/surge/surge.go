@@ -28,24 +28,8 @@ func Render(c *render.Config) render.Result {
 
 	// [General]
 	g := c.General
-	b.WriteString("[General]\nloglevel = notify\n")
-	dns := g.DNS
-	if len(dns) == 0 {
-		dns = []string{"system", "223.5.5.5", "119.29.29.29"}
-	}
-	fmt.Fprintf(&b, "dns-server = %s\n", strings.Join(dns, ", "))
-	fmt.Fprintf(&b, "proxy-test-url = %s\n", or(g.TestURL, render.DefaultTestURL))
-	fmt.Fprintf(&b, "internet-test-url = %s\n", or(g.InternetTestURL, "http://www.apple.com/library/test/success.html"))
-	fmt.Fprintf(&b, "ipv6 = %t\n", g.IPv6)
-	skip := g.SkipProxy
-	if len(skip) == 0 {
-		skip = []string{"127.0.0.1", "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "100.64.0.0/10", "localhost", "*.local"}
-	}
-	fmt.Fprintf(&b, "skip-proxy = %s\n", strings.Join(skip, ", "))
-	b.WriteString("exclude-simple-hostnames = true\n")
-	if extra := strings.TrimSpace(g.Extra["surge"]); extra != "" {
-		b.WriteString(extra + "\n")
-	}
+	b.WriteString("[General]\n")
+	b.WriteString(generalSection(g))
 
 	// [Proxy]
 	b.WriteString("\n[Proxy]\n")
@@ -91,6 +75,13 @@ func Render(c *render.Config) render.Result {
 		}
 		w.Add("rule", "FINAL", "no FINAL rule; added FINAL,%s", final)
 		fmt.Fprintf(&b, "FINAL,%s,dns-failed\n", final)
+	}
+
+	if len(g.Hosts) > 0 {
+		b.WriteString("\n[Host]\n")
+		for _, h := range g.Hosts {
+			fmt.Fprintf(&b, "%s = %s\n", h.Domain, h.Value)
+		}
 	}
 
 	for _, s := range wgSections {
@@ -556,4 +547,57 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 		line += ",no-resolve"
 	}
 	return line, true
+}
+
+// generalSection renders [General] from the profile's settings, then applies the
+// raw extra text: a "key = value" line whose key is already generated replaces
+// that line in place; other lines (new keys, comments) are appended in order.
+func generalSection(g profile.General) string {
+	dns := g.DNS
+	if len(dns) == 0 {
+		dns = []string{"system", "223.5.5.5", "119.29.29.29"}
+	}
+	skip := g.SkipProxy
+	if len(skip) == 0 {
+		skip = []string{"127.0.0.1", "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "100.64.0.0/10", "localhost", "*.local"}
+	}
+	type kv struct{ k, v string }
+	lines := []kv{
+		{"loglevel", "notify"},
+		{"dns-server", strings.Join(dns, ", ")},
+		{"proxy-test-url", or(g.TestURL, render.DefaultTestURL)},
+		{"internet-test-url", or(g.InternetTestURL, "http://www.apple.com/library/test/success.html")},
+		{"ipv6", strconv.FormatBool(g.IPv6)},
+		{"skip-proxy", strings.Join(skip, ", ")},
+		{"exclude-simple-hostnames", "true"},
+	}
+	var extra []string
+	for _, raw := range strings.Split(g.Extra["surge"], "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		k = strings.TrimSpace(k)
+		replaced := false
+		if ok && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "//") {
+			for i := range lines {
+				if lines[i].k == k {
+					lines[i].v = strings.TrimSpace(v)
+					replaced = true
+				}
+			}
+		}
+		if !replaced {
+			extra = append(extra, line)
+		}
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		fmt.Fprintf(&b, "%s = %s\n", l.k, l.v)
+	}
+	for _, l := range extra {
+		b.WriteString(l + "\n")
+	}
+	return b.String()
 }

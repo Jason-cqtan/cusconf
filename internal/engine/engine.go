@@ -42,8 +42,11 @@ func SelectNodes(p *profile.Profile, all []*node.Node) []*node.Node {
 				c.Name = re.ReplaceAllString(c.Name, p.Rename[i].Replace)
 			}
 		}
-		for seen[c.Name] {
-			c.Name += "'"
+		if seen[c.Name] {
+			base := c.Name
+			for i := 2; seen[c.Name]; i++ {
+				c.Name = fmt.Sprintf("%s %d", base, i)
+			}
 		}
 		seen[c.Name] = true
 		out = append(out, &c)
@@ -88,6 +91,7 @@ func ResolveGroups(p *profile.Profile, nodes []*node.Node, w *render.Warnings) [
 				}
 			}
 		}
+		rg.Members = applyOrder(rg.Members, g.Order)
 		out = append(out, rg)
 	}
 	breakCycles(out, w)
@@ -164,4 +168,32 @@ func Generate(req Request) (render.Result, error) {
 	}
 	res.Warnings = append(w, res.Warnings...)
 	return res, nil
+}
+
+// applyOrder moves names listed in order to the front, in that order; the rest keep their relative order.
+func applyOrder(members, order []string) []string {
+	if len(order) == 0 {
+		return members
+	}
+	rank := make(map[string]int, len(order))
+	for i, n := range order {
+		if _, dup := rank[n]; !dup {
+			rank[n] = i
+		}
+	}
+	out := slices.Clone(members)
+	slices.SortStableFunc(out, func(a, b string) int {
+		ra, okA := rank[a]
+		rb, okB := rank[b]
+		switch {
+		case okA && okB:
+			return ra - rb
+		case okA:
+			return -1
+		case okB:
+			return 1
+		}
+		return 0
+	})
+	return out
 }

@@ -1,0 +1,15 @@
+services:
+  cusconf:
+    build: .
+    image: cusconf:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Admin password. If unset, one is generated on first start and printed in the logs.
+      CUSCONF_ADMIN_PASSWORD: ${CUSCONF_ADMIN_PASSWORD:-}
+      # Public URL used in managed-config headers, e.g. https://conf.example.com
+      CUSCONF_BASE_URL: ${CUSCONF_BASE_URL:-}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data

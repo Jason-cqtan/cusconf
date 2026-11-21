@@ -4,6 +4,7 @@ package profile
 
 import (
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -62,6 +63,10 @@ type Group struct {
 	Members []string `json:"members,omitempty"`
 	// Nodes dynamically appends nodes matching the filter after Members.
 	Nodes *Filter `json:"nodes,omitempty"`
+	// Order optionally fixes the order of the final member list (members + matched nodes).
+	// Listed names come first in this order; anything not listed (e.g. new nodes) follows
+	// in its default position. Names that no longer exist are ignored.
+	Order []string `json:"order,omitempty"`
 
 	URL        string `json:"url,omitempty"`
 	Interval   int    `json:"interval,omitempty"`
@@ -98,6 +103,29 @@ type General struct {
 	SkipProxy       []string          `json:"skipProxy,omitempty"`
 	UpdateInterval  int               `json:"updateInterval,omitempty"` // managed config refresh, seconds
 	Extra           map[string]string `json:"extra,omitempty"`          // raw text per client appended to [General] / top-level
+	Hosts           []Host            `json:"hosts,omitempty"`
+}
+
+// Host is one local DNS mapping, in Surge [Host] terms:
+//
+//	example.com = 1.2.3.4            fixed IP
+//	example.com = other.example.com  alias
+//	*.corp.com  = server:10.0.0.53   resolve with a specific DNS server
+//	example.com = server:system      resolve with the system DNS
+type Host struct {
+	Domain string `json:"domain"`
+	Value  string `json:"value"`
+}
+
+// HostKind classifies a Host value: "ip", "server" or "alias".
+func (h Host) Kind() string {
+	if strings.HasPrefix(h.Value, "server:") {
+		return "server"
+	}
+	if _, err := netip.ParseAddr(h.Value); err == nil {
+		return "ip"
+	}
+	return "alias"
 }
 
 var builtins = []string{"DIRECT", "REJECT"}
@@ -135,6 +163,14 @@ func (p *Profile) Validate() error {
 	sets := map[string]bool{}
 	for _, rs := range p.RuleSets {
 		sets[rs.Name] = true
+	}
+	for i, h := range p.General.Hosts {
+		if strings.TrimSpace(h.Domain) == "" || strings.TrimSpace(h.Value) == "" {
+			return fmt.Errorf("host %d: domain and value are required", i+1)
+		}
+		if strings.ContainsAny(h.Domain+h.Value, " ,=") {
+			return fmt.Errorf("host %d (%s): must not contain spaces, commas or '='", i+1, h.Domain)
+		}
 	}
 	for i, r := range p.Rules {
 		if r.Policy != "" && !IsBuiltin(r.Policy) && !groups[r.Policy] {

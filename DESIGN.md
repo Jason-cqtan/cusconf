@@ -54,7 +54,7 @@ web/                  React 后台
 ```
 
 ## 里程碑
-**M1 主链路**
+**M1 主链路** — ✅ 已完成（2026-11-21）
 1. Node IR + 解析器: URI 列表(ss/ssr/vmess/vless/trojan/hy2/tuic/wg/anytls)、base64、Clash/mihomo YAML、Surge proxy 行;黄金样例测试
 2. 能力矩阵 + Surge / Stash renderer,按版本降级并输出告警
 3. Profile 模型:策略组(手动 / 正则 / 地区筛选)、规则、规则集源、图标
