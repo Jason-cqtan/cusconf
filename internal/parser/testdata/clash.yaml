@@ -1,0 +1,30 @@
+port: 7890
+proxies:
+  - {name: "HK SS", type: ss, server: hk.example.com, port: 8388, cipher: aes-256-gcm, password: pw, udp: true, plugin: obfs, plugin-opts: {mode: tls, host: bing.com}}
+  - name: JP VMess
+    type: vmess
+    server: jp.example.com
+    port: 443
+    uuid: b831b1f8-5a5e-4b57-a03e-1234567890ab
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: jp.example.com
+    network: ws
+    ws-opts: {path: /ws, headers: {Host: jp.example.com}}
+  - name: US Reality
+    type: vless
+    server: us.example.com
+    port: 443
+    uuid: b831b1f8-5a5e-4b57-a03e-1234567890ab
+    flow: xtls-rprx-vision
+    tls: true
+    servername: www.microsoft.com
+    client-fingerprint: chrome
+    reality-opts: {public-key: PK, short-id: "01ab"}
+  - {name: HY2, type: hysteria2, server: hy.example.com, port: 443, password: p, ports: "20000-30000", obfs: salamander, obfs-password: o, up: "50 Mbps", down: "200 Mbps"}
+  - {name: TUIC, type: tuic, server: t.example.com, port: 443, uuid: u, password: p, alpn: [h3], congestion-controller: bbr}
+  - {name: WG, type: wireguard, server: wg.example.com, port: 51820, ip: 10.0.0.2, private-key: priv, public-key: pub, reserved: [1, 2, 3], udp: true}
+  - {name: Snell, type: snell, server: s.example.com, port: 443, psk: k, version: 4, obfs-opts: {mode: http, host: bing.com}}
+  - {name: Unknown, type: mieru, server: x, port: 1}
+proxy-groups: []

@@ -1,0 +1,120 @@
+# Capability matrix: the minimum client version that supports a feature.
+#
+# Per feature, per platform:
+#   "<version>"  supported since that version
+#   never        not supported on this platform
+#   (absent)     no known restriction
+#
+# `verified: false` marks entries that were not confirmed against official docs;
+# fix them here when you know better. Renderers consult these keys to
+# downgrade (e.g. smart -> url-test) or drop unsupported nodes / params.
+#
+# Sources: manual.nssurge.com (policies/*, policy-groups/*, rules/ruleset),
+#          stash.wiki (proxy-types, rules/rule-set, release-notes/ios).
+
+clients:
+  surge:
+    platforms:
+      ios: {label: "Surge iOS", latest: "6.1.0"}
+      mac: {label: "Surge Mac", latest: "6.13.0"}
+    features:
+      proxy.ss: {}
+      proxy.ssr: {ios: never, mac: never}
+      proxy.vmess: {}
+      proxy.vless: {ios: "6.0.0", mac: "6.12.0"}
+      proxy.trojan: {}
+      proxy.hysteria: {ios: never, mac: never}
+      proxy.hysteria2: {ios: "5.8.0", mac: "5.4.0"}
+      proxy.tuic: {}
+      proxy.tuic-v5: {verified: false}
+      proxy.wireguard: {}
+      proxy.snell: {}
+      proxy.anytls: {ios: "5.17.0", mac: "6.4.3"}
+      proxy.http: {}
+      proxy.socks5: {}
+
+      transport.ws: {}
+      transport.httpupgrade: {ios: "6.0.0", mac: "6.12.0"}
+      transport.grpc: {ios: "6.0.0", mac: "6.12.0"}   # VLESS only
+      transport.xhttp: {ios: "6.0.0", mac: "6.12.0"}  # VLESS only
+      transport.h2: {ios: never, mac: never}
+      transport.http: {ios: never, mac: never}
+
+      tls.alpn: {ios: "5.20.0", mac: "6.7.0"}
+      tls.client-fingerprint: {ios: "6.1.0", mac: "6.13.0"}
+      tls.reality: {ios: "6.0.0", mac: "6.12.0"}      # VLESS only
+      vless.encryption: {ios: "6.0.0", mac: "6.12.0"}
+
+      ss.obfs: {}
+      ss.v2ray-plugin: {ios: never, mac: never}
+      shadow-tls.v2: {ios: "5.2.0", mac: "4.10.0"}
+      shadow-tls.v3: {ios: "5.5.0", mac: "5.0.3"}
+      hysteria2.port-hopping: {}
+      hysteria2.salamander: {mac: "6.4.3", verified: false}
+      hysteria2.gecko: {ios: "5.20.0", mac: "6.7.0"}
+
+      group.select: {}
+      group.url-test: {}
+      group.fallback: {}
+      group.load-balance: {}
+      group.smart: {ios: "5.11.0", mac: "5.7.0"}
+      group.icon: {mac: "6.5.0"}
+      group.category: {ios: "5.23.0", mac: "6.10.0"}
+      group.include-other-group: {ios: "4.12.0", mac: "4.5.0"}
+
+      rule.rule-set: {}
+      rule.domain-set: {}
+
+  stash:
+    # Stash version numbers are app versions: iOS/tvOS 3.x, macOS 4.x.
+    platforms:
+      ios: {label: "Stash iOS/tvOS", latest: "3.6.0"}
+      mac: {label: "Stash macOS", latest: "4.3.0"}
+    features:
+      proxy.ss: {}
+      proxy.ssr: {}
+      proxy.vmess: {}
+      proxy.vless: {ios: "3.1.0", verified: false}
+      proxy.trojan: {}
+      proxy.hysteria: {}
+      proxy.hysteria2: {}
+      proxy.tuic: {}
+      proxy.tuic-v5: {}
+      proxy.wireguard: {}
+      proxy.snell: {}
+      proxy.anytls: {ios: "3.3.0", verified: false}
+      proxy.http: {}
+      proxy.socks5: {}
+
+      transport.ws: {}
+      transport.httpupgrade: {verified: false}
+      transport.grpc: {}
+      transport.h2: {}
+      transport.http: {}
+      transport.xhttp: {ios: "3.6.0", mac: "4.3.0"}
+
+      tls.alpn: {}
+      tls.client-fingerprint: {}
+      tls.reality: {ios: "3.1.0", verified: false}      # VLESS; VMess/Trojan REALITY: 3.6/4.3
+      tls.reality-non-vless: {ios: "3.6.0", mac: "4.3.0"}
+      vless.encryption: {ios: "3.6.0", mac: "4.3.0"}
+
+      ss.obfs: {}
+      ss.v2ray-plugin: {}
+      shadow-tls.v2: {ios: "3.0.0"}
+      shadow-tls.v3: {ios: "3.0.0"}
+      hysteria2.port-hopping: {}
+      hysteria2.salamander: {ios: "3.4.0", mac: "4.2.0"}
+      hysteria2.gecko: {ios: "3.6.0", mac: "4.3.0"}
+
+      group.select: {}
+      group.url-test: {}
+      group.fallback: {}
+      group.load-balance: {}
+      group.smart: {ios: never, mac: never}
+      group.icon: {}
+      group.category: {ios: never, mac: never}
+      group.include-other-group: {}
+
+      rule.rule-set: {}
+      rule.domain-set: {}
