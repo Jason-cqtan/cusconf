@@ -28,6 +28,8 @@ func Render(c *render.Config) render.Result {
 
 	// [General]
 	g := c.General
+	extraGeneral, extraSections := splitExtra(&w, g.Extra["surge"], g.Extra["surge-"+c.Target.Platform])
+	g.Extra = map[string]string{"surge": extraGeneral}
 	b.WriteString("[General]\n")
 	b.WriteString(generalSection(g))
 
@@ -100,6 +102,9 @@ func Render(c *render.Config) render.Result {
 
 	for _, s := range wgSections {
 		b.WriteString("\n" + s)
+	}
+	for _, sec := range extraSections {
+		b.WriteString("\n[" + sec.name + "]\n" + strings.Join(sec.lines, "\n") + "\n")
 	}
 	return render.Result{Content: b.String(), ContentType: "text/plain; charset=utf-8", Warnings: w}
 }
@@ -562,6 +567,71 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 		line += ",no-resolve"
 	}
 	return line, true
+}
+
+type rawSection struct {
+	name  string
+	lines []string
+}
+
+// generated lists the sections cusconf writes itself; extra text cannot add to them
+// (rules after FINAL would never match, and proxies / groups come from the profile).
+var generated = map[string]bool{"proxy": true, "proxy group": true, "rule": true, "host": true}
+
+// splitExtra splits raw extra texts (the shared Surge text, then the platform's own)
+// into [General] lines, written before any section header (or under [General]), and
+// other sections such as [SSID Setting] or [MITM], which are appended to the config
+// as is. Lines of the same section are merged in order.
+func splitExtra(w *render.Warnings, texts ...string) (string, []rawSection) {
+	var general []string
+	var sections []rawSection
+	idx := map[string]int{}
+	var lines []string
+	for _, t := range texts {
+		lines = append(lines, "[General]") // each text starts in [General]
+		lines = append(lines, strings.Split(t, "\n")...)
+	}
+	cur := -1 // -1: [General]; -2: skipped section
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			name := strings.TrimSpace(line[1 : len(line)-1])
+			key := strings.ToLower(name)
+			switch {
+			case key == "general":
+				cur = -1
+			case generated[key]:
+				w.Add("general", "Surge 追加内容", "[%s] is generated from the profile; its extra lines are ignored", name)
+				cur = -2
+			default:
+				i, ok := idx[key]
+				if !ok {
+					i = len(sections)
+					idx[key] = i
+					sections = append(sections, rawSection{name: name})
+				}
+				cur = i
+			}
+			continue
+		}
+		if line == "" {
+			continue
+		}
+		switch cur {
+		case -1:
+			general = append(general, line)
+		case -2:
+		default:
+			sections[cur].lines = append(sections[cur].lines, line)
+		}
+	}
+	kept := sections[:0]
+	for _, sec := range sections {
+		if len(sec.lines) > 0 {
+			kept = append(kept, sec)
+		}
+	}
+	return strings.Join(general, "\n"), kept
 }
 
 // generalSection renders [General] from the profile's settings, then applies the

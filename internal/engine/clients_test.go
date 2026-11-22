@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cusconf/cusconf/internal/capability"
+	"github.com/cusconf/cusconf/internal/profile"
 	"github.com/cusconf/cusconf/internal/render"
 )
 
@@ -225,5 +226,37 @@ func TestMirrorLocal(t *testing.T) {
 	pub, _ := Generate(req)
 	if !strings.Contains(pub.Content, "conf.example.com/rs/") {
 		t.Error("public mirror URLs should be used")
+	}
+}
+
+func TestSurgeExtraSections(t *testing.T) {
+	p := profile.Default(nil, 0)
+	p.General.Extra = map[string]string{
+		"surge":     "show-error-page-for-reject = true\n\n[MITM]\nhostname = a.example.com\n\n[Rule]\nDOMAIN,x.com,DIRECT",
+		"surge-ios": "hide-vpn-icon = true\n[SSID Setting]\nSSID:betterme.xin* suspend=true\n[MITM]\nskip-server-cert-verify = true",
+	}
+	gen := func(platform string) render.Result {
+		res, err := Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge, Platform: platform}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	ios := gen("ios")
+	general := ios.Content[:strings.Index(ios.Content, "\n[Proxy]\n")]
+	for _, want := range []string{"show-error-page-for-reject = true\n", "hide-vpn-icon = true\n"} {
+		if !strings.Contains(general, want) {
+			t.Errorf("[General] missing %q", want)
+		}
+	}
+	if !strings.HasSuffix(ios.Content, "\n[MITM]\nhostname = a.example.com\nskip-server-cert-verify = true\n\n[SSID Setting]\nSSID:betterme.xin* suspend=true\n") {
+		t.Errorf("sections:\n%s", ios.Content[strings.LastIndex(ios.Content, "[Host]"):])
+	}
+	if strings.Contains(ios.Content, "DOMAIN,x.com,DIRECT") || !hasWarning(ios.Warnings, "Surge 追加内容", "[Rule]") {
+		t.Error("[Rule] extra lines should be ignored with a warning")
+	}
+	mac := gen("mac").Content
+	if strings.Contains(mac, "SSID") || strings.Contains(mac, "hide-vpn-icon") || !strings.Contains(mac, "[MITM]\nhostname = a.example.com\n") {
+		t.Errorf("mac should only get the shared text:\n%s", mac[strings.LastIndex(mac, "[Host]"):])
 	}
 }

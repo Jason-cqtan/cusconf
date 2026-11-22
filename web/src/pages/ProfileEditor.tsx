@@ -224,6 +224,12 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
   const list = (v?: string[]) => (v ?? []).join(", ");
   const parse = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
   const extra = useMemo(() => g.extra ?? {}, [g.extra]);
+  const [surgeKey, setSurgeKey] = useState<"surge" | "surge-ios" | "surge-mac">("surge");
+  const surgeScopes = [
+    { key: "surge", label: tr("通用") },
+    { key: "surge-ios", label: tr("仅 iOS") },
+    { key: "surge-mac", label: tr("仅 Mac") },
+  ] as const;
   return (
     <div className="space-y-8">
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -246,14 +252,25 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
       </div>
       <div className="sm:col-span-2 xl:col-span-4"><HostsEditor hosts={g.hosts ?? []} onChange={(hosts) => set({ hosts })} /></div>
     </div>
-    <ExtraConfigEditor
-      client="surge"
-      label={tr("Surge [General] 追加内容")}
-      hint={tr("每行 key = value。与上方生成的同名项会覆盖生成值，其余追加到 [General] 末尾。点击右侧可配置项快速插入。")}
-      value={extra.surge ?? ""}
-      onChange={(v) => set({ extra: { ...extra, surge: v } })}
-      placeholder={tr("例如：\nshow-error-page-for-reject = true")}
-    />
+    <div className="space-y-2">
+      <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-800 p-0.5 text-xs">
+        {surgeScopes.map((sc) => (
+          <button key={sc.key} type="button" onClick={() => setSurgeKey(sc.key)}
+            className={cx("rounded px-2.5 py-1", surgeKey === sc.key ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400")}>
+            {sc.label}{extra[sc.key]?.trim() ? " •" : ""}
+          </button>
+        ))}
+      </div>
+      <ExtraConfigEditor
+        key={surgeKey}
+        client="surge"
+        label={tr("Surge 追加内容")}
+        hint={tr("每行 key = value，追加到 [General]：与生成的同名项会覆盖生成值，其余追加到末尾。写上 [SSID Setting]、[MITM] 等段名后的内容作为独立段追加到配置末尾（[Proxy] [Proxy Group] [Rule] [Host] 由配置生成，不能追加）。「仅 iOS」「仅 Mac」的内容只加到对应平台，排在通用内容之后。点击右侧可配置项快速插入。")}
+        value={extra[surgeKey] ?? ""}
+        onChange={(v) => set({ extra: { ...extra, [surgeKey]: v } })}
+        placeholder={surgeKey === "surge-ios" ? tr("例如：\n[SSID Setting]\nSSID:MyHomeWiFi* suspend=true") : tr("例如：\nshow-error-page-for-reject = true")}
+      />
+    </div>
     <ExtraConfigEditor
       client="stash"
       label={tr("Stash 追加 YAML")}
