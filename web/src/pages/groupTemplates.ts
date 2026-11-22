@@ -110,6 +110,9 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
   {
     category: tr("社交通讯"),
     items: [
+      // WeChat often connects straight to Tencent Cloud overseas IPs (no domain to match);
+      // without the ASN rule those fall through to FINAL and images fail over a proxy.
+      { name: "Wechat", icon: QURE + "WeChat.png", ruleSets: ["Wechat"], direct: true, rules: "# 微信直连腾讯海外云 IP（无域名），否则会落到兜底规则走代理导致图片收不到\nIP-ASN,132203,no-resolve" },
       { name: "Telegram", icon: QURE + "Telegram.png", ruleSets: ["Telegram"] },
       { name: "X", icon: QURE + "Twitter.png", ruleSets: ["Twitter"] },
       { name: "Discord", icon: QURE + "Discord.png", ruleSets: ["Discord"] },
