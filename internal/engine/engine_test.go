@@ -486,7 +486,7 @@ func TestServerDNS(t *testing.T) {
 	p := profile.Default(nil, 0)
 	p.General.Hosts = []profile.Host{
 		{Domain: "dns.alidns.com", Value: "223.5.5.5,223.6.6.6"},
-		{Domain: "*.cn", Value: "server:223.5.5.5"}, // generated entries go before this
+		{Domain: "*.cn", Value: "server:223.5.5.5"},        // generated entries go before this
 		{Domain: "hk.example.com", Value: "server:system"}, // the user's own mapping wins
 	}
 	if err := p.Validate(); err != nil {
@@ -643,7 +643,7 @@ func TestServerDirectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"DOMAIN,a.example.com,DIRECT", "DOMAIN,sub1.example.com,DIRECT", "a.example.com = server:", "sub1.example.com = server:"} {
+	for _, want := range []string{"DOMAIN,a.example.com,DIRECT", "DOMAIN,sub1.example.com,DIRECT", "*.example.com = server:"} {
 		if !strings.Contains(res.Content, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -725,5 +725,22 @@ func TestLocalNodes(t *testing.T) {
 	}
 	if !hasWarning(ios.Warnings, "本机节点", "Corp SOCKS") {
 		t.Errorf("warnings: %+v", ios.Warnings)
+	}
+}
+
+func TestCollapseDomains(t *testing.T) {
+	got := collapseDomains([]string{
+		"0bc52bj8-10e0.aws-agent.org", "e3585sh2-3ad5.aws-agent.org", "fd025gz0-c617.aws-agent.org",
+		"3ad8eb76-590c-11f1.163cdn-agent.net", "3ad8eb76-590c-11f2.163cdn-agent.net",
+		"api-huacloud.com",             // registrable domain itself
+		"7b9a20c2cdfb.qtt-163cdn.com",  // alone under its base
+		"a.b.deep.com", "c.b.deep.com", // two labels below: kept exact
+		"x.mine.com", "y.mine.com", // the profile maps something under mine.com
+		"hk1.example.com.cn", "hk2.example.com.cn", // multi-label public suffix
+		"d1.cloudfront.net", "d2.cloudfront.net", // private suffix: each is its own site
+	}, map[string]bool{"z.mine.com": true})
+	want := "*.163cdn-agent.net 7b9a20c2cdfb.qtt-163cdn.com a.b.deep.com api-huacloud.com *.aws-agent.org c.b.deep.com d1.cloudfront.net d2.cloudfront.net *.example.com.cn x.mine.com y.mine.com"
+	if strings.Join(got, " ") != want {
+		t.Errorf("got  %s\nwant %s", strings.Join(got, " "), want)
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/cusconf/cusconf/internal/capability"
 	"github.com/cusconf/cusconf/internal/node"
 	"github.com/cusconf/cusconf/internal/profile"
@@ -443,7 +445,10 @@ func serverDomains(nodes []*node.Node, subscriptionURLs []string) []string {
 }
 
 // ServerDNSHosts maps every node server and subscription domain to General.ServerDNS,
-// skipping domains the profile's own hosts already map.
+// skipping domains the profile's own hosts already map. Two or more domains directly
+// under the same registrable domain (e.g. a.example.com, b.example.com) collapse into
+// one *.example.com entry; the airport owns the whole domain, so this also covers
+// servers it adds later.
 func ServerDNSHosts(g profile.General, nodes []*node.Node, subscriptionURLs []string) []profile.Host {
 	if g.ServerDNS == "" {
 		return nil
@@ -452,16 +457,65 @@ func ServerDNSHosts(g profile.General, nodes []*node.Node, subscriptionURLs []st
 	for _, h := range g.Hosts {
 		mine[strings.ToLower(h.Domain)] = true
 	}
-	var out []profile.Host
+	var domains []string
 	for _, d := range serverDomains(nodes, subscriptionURLs) {
 		if !mine[d] {
-			out = append(out, profile.Host{Domain: d, Value: "server:" + g.ServerDNS})
+			domains = append(domains, d)
 		}
+	}
+	var out []profile.Host
+	for _, d := range collapseDomains(domains, mine) {
+		out = append(out, profile.Host{Domain: d, Value: "server:" + g.ServerDNS})
 	}
 	if len(out) > 0 {
 		out[0].Comment = "节点与订阅域名（自动生成）：用国内 DNS 解析，避免经代理的加密 DNS 需要先连上节点"
 	}
 	return out
+}
+
+// collapseDomains replaces two or more domains one label below the same registrable
+// domain with "*.<registrable domain>". Deeper names, lone ones, and bases the profile
+// already maps (exactly or as a wildcard) stay as they are. The result is sorted.
+func collapseDomains(domains []string, mine map[string]bool) []string {
+	byBase := map[string][]string{}
+	for _, d := range domains {
+		base, err := publicsuffix.EffectiveTLDPlusOne(d)
+		if err != nil || base == d || strings.Count(d, ".") != strings.Count(base, ".")+1 {
+			continue // one label below the base only: "*.base" means the same in every client
+		}
+		byBase[base] = append(byBase[base], d)
+	}
+	merged := map[string]bool{}
+	var out []string
+	for base, ds := range byBase {
+		if len(ds) < 2 || ownsUnder(mine, base) {
+			continue
+		}
+		out = append(out, "*."+base)
+		for _, d := range ds {
+			merged[d] = true
+		}
+	}
+	for _, d := range domains {
+		if !merged[d] {
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.TrimPrefix(out[i], "*.") < strings.TrimPrefix(out[j], "*.")
+	})
+	return out
+}
+
+// ownsUnder reports whether the profile's own hosts map base or anything under it.
+func ownsUnder(mine map[string]bool, base string) bool {
+	for d := range mine {
+		d = strings.TrimPrefix(d, "*.")
+		if d == base || strings.HasSuffix(d, "."+base) {
+			return true
+		}
+	}
+	return false
 }
 
 // insertHosts puts the generated exact-domain entries after the profile's exact ones
