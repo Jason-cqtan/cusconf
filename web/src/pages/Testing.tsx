@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Gauge, Plus, Settings2, Square, Trash2 } from "lucide-react";
-import { api, formatTime, type IPSource, type Node, type ServiceStatus, type Source, type TestJob, type TestResult, type TestSettings } from "../api";
+import { api, formatTime, type IPSource, type Node, type ServiceStatus, type Source, type TestJob, type SyncStatus, type TestResult, type TestSettings } from "../api";
 import { MultiSelect } from "../components/MultiSelect";
-import { Badge, Button, ErrorText, Field, Input, Modal, Toggle, cx } from "../components/ui";
+import { Badge, Button, CopyButton, ErrorText, Field, Input, Modal, Toggle, cx } from "../components/ui";
 import { tr, trMsg } from "../i18n";
 
 // --- service list (cached for the session) ---
@@ -106,7 +106,7 @@ export function TestDetail({ r, onClose }: { r: TestResult | null; onClose: () =
         <div className="space-y-5 text-sm">
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             <span>{tr("延迟")} <LatencyCell r={r} /></span>
-            <span className="text-zinc-500">{tr("测试于")} {formatTime(r.testedAt)}</span>
+            <span className="text-zinc-500">{tr("测试于")} {formatTime(r.testedAt)}{r.synced && <> · {tr("来自同步")}</>}</span>
             {r.error && <span className="text-red-600">{trMsg(r.error)}</span>}
           </div>
           {r.warning && <p className="rounded-md bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">⚠ {trMsg(r.warning)}</p>}
@@ -253,12 +253,65 @@ export function TestToolbar({ nodes, sources, onFinished }: { nodes: Node[]; sou
       {err && <span className="text-xs text-red-600">{err}</span>}
       {!running && job?.error && <span className="text-xs text-red-600" title={trMsg(job.error)}>{tr("测试未能运行：")}{trMsg(job.error)}</span>}
       {!running && !job?.error && job?.finishedAt && <span className="text-xs text-zinc-500">{tr("上次")} {formatTime(job.finishedAt)} {tr("· 可用")} {job.reachable}/{job.done}</span>}
+      {job?.sync && <span className={cx("text-xs", job.sync.error ? "text-red-600" : "text-zinc-500")} title={formatTime(job.sync.at)}>{job.sync.error ? tr("推送失败：") + trMsg(job.sync.error) : tr("已推送 {0} 条", job.sync.count)}</span>}
       {settingsOpen && <TestSettingsDialog onClose={() => { setSettingsOpen(false); api.testSettings().then(setSettings).catch(() => {}); }} />}
     </div>
   );
 }
 
 // --- settings ---
+
+/** Pushing results to another cusconf, and this instance's key for receiving them. */
+function SyncSettings({ s, set, save }: { s: TestSettings; set: (p: Partial<TestSettings>) => void; save: () => Promise<unknown> }) {
+  const sync = s.sync ?? {};
+  const setSync = (p: Partial<NonNullable<TestSettings["sync"]>>) => set({ sync: { ...sync, ...p } });
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { api.syncKey().then((r) => setKey(r.key)).catch(() => {}); }, []);
+
+  const push = async () => {
+    setBusy(true);
+    setErr(null);
+    try { await save(); setStatus(await api.syncPush()); } catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
+      <div>
+        <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("同步测试结果")}</div>
+        <p className="mt-1 text-xs text-zinc-500">
+          {tr("有些节点只接受中国大陆网络的连接，部署在境外的 cusconf 测不通它们。可以在能连上的地方（如家里的电脑）运行 cusconf 测试，再把结果推送到服务器；服务器本地测试失败时不会覆盖同步来的可用结果。")}
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <Field label={tr("推送到（对方 cusconf 地址）")}>
+          <Input className="font-mono text-xs" placeholder="https://sub.example.com" value={sync.url ?? ""} onChange={(e) => setSync({ url: e.target.value.trim() || undefined })} />
+        </Field>
+        <Field label={tr("对方的同步密钥")}>
+          <Input className="font-mono text-xs" type="password" autoComplete="off" value={sync.key ?? ""} onChange={(e) => setSync({ key: e.target.value.trim() || undefined })} />
+        </Field>
+        <Button disabled={busy || !sync.url || !sync.key} onClick={push}>{busy ? tr("同步中…") : tr("保存并立即推送")}</Button>
+      </div>
+      <Toggle checked={!!sync.auto} onChange={(v) => setSync({ auto: v || undefined })} label={tr("每次测试完成后自动推送")} />
+      <ErrorText error={err} />
+      {status && (status.error
+        ? <p className="text-xs text-red-600">{tr("推送失败：")}{trMsg(status.error)}</p>
+        : <p className="text-xs text-emerald-600">{tr("已推送，对方更新了 {0} 条结果（较旧的结果不会覆盖对方更新的数据）", status.count)}</p>)}
+      <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
+        <Field label={tr("本机的同步密钥")} hint={tr("在推送方填写本机地址和这个密钥。重新生成后，使用旧密钥的推送会失败。")}>
+          <div className="flex gap-2">
+            <Input readOnly className="font-mono text-xs" type="password" value={key} onFocus={(e) => { e.currentTarget.type = "text"; e.currentTarget.select(); }} onBlur={(e) => { e.currentTarget.type = "password"; }} />
+            <CopyButton text={key} />
+            <Button size="sm" variant="ghost" onClick={async () => { if (confirm(tr("重新生成同步密钥？使用旧密钥的推送将失败。"))) setKey((await api.syncKey(true)).key); }}>{tr("重新生成")}</Button>
+          </div>
+        </Field>
+      </div>
+    </div>
+  );
+}
 
 function TestSettingsDialog({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<TestSettings | null>(null);
@@ -287,6 +340,8 @@ function TestSettingsDialog({ onClose }: { onClose: () => void }) {
             <Field label={tr("定时完整测试（小时）")} hint={tr("0 为关闭")}><Input type="number" min={0} value={s.scheduleHours} onChange={(e) => set({ scheduleHours: +e.target.value })} /></Field>
             <Field label={tr("测速地址")}><Input value={s.latencyUrl} onChange={(e) => set({ latencyUrl: e.target.value })} /></Field>
           </div>
+
+          <SyncSettings s={s} set={set} save={() => api.saveTestSettings(s)} />
 
           <div>
             <div className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("服务可用性检测")}</div>

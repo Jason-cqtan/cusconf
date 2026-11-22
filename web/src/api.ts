@@ -74,6 +74,8 @@ export type ServiceStatus = "yes" | "partial" | "no" | "unknown" | "error";
 export interface ServiceResult { status: ServiceStatus; region?: string; note?: string }
 export interface IPReport { source: string; ip?: string; country?: string; city?: string; isp?: string; asn?: string; score?: number; flags?: string[]; error?: string }
 export interface TestResult {
+  /** Received from another cusconf instead of tested here. */
+  synced?: boolean;
   key: string;
   name: string;
   testedAt: number;
@@ -107,8 +109,11 @@ export interface TestSettings {
   services: string[];
   scheduleHours: number;
   sources?: string[] | null;
+  /** Push results to another cusconf (e.g. a server that cannot reach some nodes). */
+  sync?: { url?: string; key?: string; auto?: boolean };
 }
-export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean }; /** The job could not run, e.g. mihomo is missing. */ error?: string }
+export interface SyncStatus { at: number; count: number; error?: string }
+export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean }; /** The job could not run, e.g. mihomo is missing. */ error?: string; sync?: SyncStatus | null }
 
 export type GroupType = "select" | "url-test" | "fallback" | "load-balance" | "smart";
 
@@ -281,6 +286,8 @@ export const api = {
   startTest: (keys: string[], ip: boolean, services: boolean) => req<TestJob>("POST", "/tests/job", { keys, ip, services }),
   stopTest: () => req<TestJob>("DELETE", "/tests/job"),
   testNode: (key: string, ip = true, services = true) => req<TestResult>("POST", "/tests/node", { key, ip, services }),
+  syncKey: (regenerate = false) => req<{ key: string }>(regenerate ? "POST" : "GET", "/sync/key"),
+  syncPush: () => req<SyncStatus>("POST", "/sync/push"),
 
   tokens: () => req<Token[]>("GET", "/tokens"),
   saveToken: (t: Partial<Token>) => t.token ? req<Token>("PUT", `/tokens/${t.token}`, t) : req<Token>("POST", "/tokens", t),

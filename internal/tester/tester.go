@@ -27,6 +27,8 @@ type Settings struct {
 	// KnownIPSources are the default IP source names that existed when settings were
 	// saved, so defaults added later get appended (a removed default stays removed).
 	KnownIPSources []string `json:"knownIpSources"`
+	// Sync pushes results to another cusconf (see sync.go).
+	Sync SyncSettings `json:"sync"`
 }
 
 // ipSourcesBeforeKnown are the default IP sources that shipped before KnownIPSources was tracked.
@@ -177,6 +179,8 @@ type Result struct {
 	Exit     *Exit                    `json:"exit,omitempty"`
 	Reports  []IPReport               `json:"reports,omitempty"`
 	Services map[string]ServiceResult `json:"services,omitempty"`
+	// Synced marks a result received from another cusconf instead of tested here.
+	Synced bool `json:"synced,omitempty"`
 }
 
 // Merge keeps earlier IP / service data when a newer run skipped those checks.

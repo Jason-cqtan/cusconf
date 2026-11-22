@@ -60,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.Logger)
 		r.Post("/login", s.login)
+		r.Post("/sync/results", s.syncImport) // authenticated by the sync key
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.middleware)
 			r.Get("/capabilities", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, capability.Default) })
@@ -81,6 +82,9 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/tests/job", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.tests.Status()) })
 			r.Post("/tests/job", s.startTest)
 			r.Post("/tests/node", s.testNode)
+			r.Get("/sync/key", s.syncKey)
+			r.Post("/sync/key", s.syncKey)
+			r.Post("/sync/push", s.syncPush)
 			r.Delete("/tests/job", func(w http.ResponseWriter, _ *http.Request) { s.tests.Stop(); writeJSON(w, s.tests.Status()) })
 
 			r.Get("/profiles", s.listProfiles)

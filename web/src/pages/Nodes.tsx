@@ -326,7 +326,7 @@ function testColumns(results: Record<string, TestResult>, services: { id: string
       cell: (n) => wrap(n, <SourceCell r={R(n)} src={src} />),
     })),
     { id: "unlock", label: tr("解锁"), title: tr("可用的流媒体 / AI 服务；½ 表示部分可用"), sortKey: (n) => String(100 - Object.values(R(n)?.services ?? {}).filter((s) => s.status === "yes").length).padStart(3, "0"), cell: (n) => wrap(n, <UnlockCell r={R(n)} services={services} />) },
-    { id: "tested", label: tr("测试时间"), sortKey: (n) => String(1e12 - (R(n)?.testedAt ?? 0)), cell: (n) => <span className="text-xs text-zinc-500">{formatTime(R(n)?.testedAt)}</span> },
+    { id: "tested", label: tr("测试时间"), sortKey: (n) => String(1e12 - (R(n)?.testedAt ?? 0)), cell: (n) => <span className="text-xs text-zinc-500" title={R(n)?.synced ? tr("由其它 cusconf 测试后同步而来") : undefined}>{formatTime(R(n)?.testedAt)}{R(n)?.synced && " · " + tr("同步")}</span> },
   ];
 }
 

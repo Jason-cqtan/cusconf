@@ -26,15 +26,18 @@ type Job struct {
 	FinishedAt int64  `json:"finishedAt,omitempty"`
 	Scheduled  bool   `json:"scheduled,omitempty"`
 	Error      string `json:"error,omitempty"` // the job could not run (e.g. mihomo missing)
+	// Sync is the outcome of the last push to another cusconf, if any.
+	Sync *SyncStatus `json:"sync,omitempty"`
 }
 
 type Manager struct {
 	st *store.Store
 
-	mu      sync.Mutex
-	job     Job
-	cancel  context.CancelFunc
-	results map[string]Result // cache of stored results
+	mu       sync.Mutex
+	job      Job
+	cancel   context.CancelFunc
+	results  map[string]Result // cache of stored results
+	lastSync *SyncStatus
 }
 
 func NewManager(st *store.Store) *Manager { return &Manager{st: st} }
@@ -123,7 +126,9 @@ func (m *Manager) Attach(nodes []*node.Node) {
 func (m *Manager) Status() Job {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.job
+	j := m.job
+	j.Sync = m.lastSync
+	return j
 }
 
 // Stop cancels the running job; finished nodes keep their results.
@@ -169,16 +174,32 @@ func (m *Manager) TestOne(ctx context.Context, n *node.Node, c Checks) Result {
 	}
 	defer core.Close()
 	r := Test(ctx, core, n, m.Settings(), c)
-	m.save(r, c)
+	r = m.save(r, c)
+	m.autoPush()
 	return r
 }
 
 // save merges a result with the previous one, caches and persists it.
+// A failed local test does not replace a working result synced from another
+// instance: that instance can reach the node, this one cannot (see sync.go).
 func (m *Manager) save(r Result, c Checks) Result {
 	m.mu.Lock()
 	if prev, had := m.results[r.Key]; had {
+		if prev.Synced && prev.Latency > 0 && r.Latency == 0 {
+			m.mu.Unlock()
+			return prev
+		}
 		r.Merge(&prev, c)
 	}
+	m.mu.Unlock()
+	m.store(r)
+	return r
+}
+
+// store caches and persists a result as is.
+func (m *Manager) store(r Result) {
+	m.Results() // make sure the cache is loaded
+	m.mu.Lock()
 	m.results[r.Key] = r
 	m.mu.Unlock()
 	if b, err := json.Marshal(r); err == nil {
@@ -186,7 +207,6 @@ func (m *Manager) save(r Result, c Checks) Result {
 			slog.Error("store test result", "err", err)
 		}
 	}
-	return r
 }
 
 func (m *Manager) run(ctx context.Context, nodes []*node.Node, c Checks) {
@@ -213,7 +233,7 @@ func (m *Manager) run(ctx context.Context, nodes []*node.Node, c Checks) {
 				if ctx.Err() != nil {
 					return // cancelled mid-test: do not store a bogus failure
 				}
-				m.save(r, c)
+				r = m.save(r, c)
 				m.mu.Lock()
 				m.job.Done++
 				if r.Latency > 0 {
@@ -240,6 +260,7 @@ func (m *Manager) run(ctx context.Context, nodes []*node.Node, c Checks) {
 	m.cancel = nil
 	slog.Info("node test finished", "total", m.job.Total, "done", m.job.Done, "reachable", m.job.Reachable)
 	m.mu.Unlock()
+	m.autoPush()
 }
 
 const lastScheduledKey = "test_last_scheduled"
