@@ -257,7 +257,7 @@ func Generate(req Request) (render.Result, error) {
 			direct = append([]profile.Rule{{Type: "DOMAIN", Value: h, Policy: "DIRECT"}}, direct...)
 		}
 		rules = append(direct, rules...)
-		general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, servers, subs)...)
+		general.Hosts = insertHosts(general.Hosts, ServerDNSHosts(general, servers, subs))
 	}
 	rules = adaptProcessRules(rules, t)
 	if len(droppedGroups) > 0 {
@@ -462,6 +462,20 @@ func ServerDNSHosts(g profile.General, nodes []*node.Node, subscriptionURLs []st
 		out[0].Comment = "节点与订阅域名（自动生成）：用国内 DNS 解析，避免经代理的加密 DNS 需要先连上节点"
 	}
 	return out
+}
+
+// insertHosts puts the generated exact-domain entries after the profile's exact ones
+// but before its first wildcard or rule-set entry (e.g. *.cn, RULE-SET:…), so a broad
+// entry listed earlier never captures a node domain.
+func insertHosts(mine, gen []profile.Host) []profile.Host {
+	if len(gen) == 0 {
+		return mine
+	}
+	at := slices.IndexFunc(mine, func(h profile.Host) bool { return strings.ContainsAny(h.Domain, "*?:") })
+	if at < 0 {
+		at = len(mine)
+	}
+	return slices.Concat(mine[:at], gen, mine[at:])
 }
 
 // dohHost returns the host name of a DoH / DoT / DoQ server address, or "" for a plain IP.

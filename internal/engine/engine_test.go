@@ -486,6 +486,7 @@ func TestServerDNS(t *testing.T) {
 	p := profile.Default(nil, 0)
 	p.General.Hosts = []profile.Host{
 		{Domain: "dns.alidns.com", Value: "223.5.5.5,223.6.6.6"},
+		{Domain: "*.cn", Value: "server:223.5.5.5"}, // generated entries go before this
 		{Domain: "hk.example.com", Value: "server:system"}, // the user's own mapping wins
 	}
 	if err := p.Validate(); err != nil {
@@ -507,6 +508,9 @@ func TestServerDNS(t *testing.T) {
 		if !strings.Contains(host, want) {
 			t.Errorf("missing %q in\n%s", want, host)
 		}
+	}
+	if gen, wild := strings.Index(host, "jp.example.com = server:"), strings.Index(host, "*.cn = "); wild < 0 || gen > wild {
+		t.Errorf("generated entries must come before wildcard / rule-set ones:\n%s", host)
 	}
 	if strings.Count(host, "hk.example.com") != 1 || strings.Contains(host, "1.2.3.4 =") {
 		t.Errorf("duplicate or IP host entries:\n%s", host)
