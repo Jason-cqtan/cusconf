@@ -6,12 +6,14 @@ import SourcesPage from "./pages/Sources";
 import NodesPage from "./pages/Nodes";
 import ProfilesPage from "./pages/Profiles";
 import TokensPage from "./pages/Tokens";
+import { PrefsSwitch } from "./components/PrefsSwitch";
+import { tr } from "./i18n";
 
 const pages = [
-  { id: "sources", label: "订阅源", icon: Cloud },
-  { id: "nodes", label: "节点", icon: Server },
-  { id: "profiles", label: "配置", icon: SlidersHorizontal },
-  { id: "tokens", label: "订阅链接", icon: Link2 },
+  { id: "sources", label: tr("订阅源"), icon: Cloud },
+  { id: "nodes", label: tr("节点"), icon: Server },
+  { id: "profiles", label: tr("配置"), icon: SlidersHorizontal },
+  { id: "tokens", label: tr("订阅链接"), icon: Link2 },
 ] as const;
 type PageId = (typeof pages)[number]["id"];
 
@@ -54,8 +56,9 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <PrefsSwitch className="shrink-0 md:mb-2 md:px-1" />
         <Button variant="ghost" size="sm" className="md:justify-start" onClick={() => { session.clear(); setAuthed(false); }}>
-          <LogOut size={14} /> <span className="hidden md:inline">退出</span>
+          <LogOut size={14} /> <span className="hidden md:inline">{tr("退出")}</span>
         </Button>
       </aside>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8">
@@ -73,7 +76,8 @@ function Login({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <PrefsSwitch className="absolute top-4 right-4" />
       <form
         className="w-full max-w-sm space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6"
         onSubmit={async (e) => {
@@ -93,11 +97,11 @@ function Login({ onDone }: { onDone: () => void }) {
       >
         <div>
           <h1 className="text-lg font-semibold">cusconf</h1>
-          <p className="text-sm text-zinc-500">订阅转换与配置生成</p>
+          <p className="text-sm text-zinc-500">{tr("订阅转换与配置生成")}</p>
         </div>
-        <Input type="password" placeholder="管理员密码" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
+        <Input type="password" placeholder={tr("管理员密码")} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
         <ErrorText error={err} />
-        <Button variant="primary" className="w-full" disabled={busy || !pw}>登录</Button>
+        <Button variant="primary" className="w-full" disabled={busy || !pw}>{tr("登录")}</Button>
       </form>
     </div>
   );

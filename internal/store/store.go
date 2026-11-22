@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS access_log (
 CREATE INDEX IF NOT EXISTS access_log_token ON access_log(token, at);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS node_tests (key TEXT PRIMARY KEY, data TEXT NOT NULL, tested_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS rule_cache (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, behavior TEXT NOT NULL,
+  body BLOB, fetched_at INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', used_at INTEGER NOT NULL DEFAULT 0
+);
 `
 
 func Open(path string) (*Store, error) {
@@ -234,6 +238,7 @@ type Token struct {
 	MaxUses   int               `json:"maxUses,omitempty"`   // 0 = unlimited
 	Revoked   bool              `json:"revoked"`
 	CreatedAt int64             `json:"createdAt"`
+	Short     string            `json:"short,omitempty"` // short link code: /s/{short}
 
 	Uses       int    `json:"uses"`
 	LastUsedAt int64  `json:"lastUsedAt,omitempty"`
@@ -258,6 +263,32 @@ func (s *Store) PutToken(v *Token) error            { return put(s, "token", v.T
 func (s *Store) GetToken(id string) (*Token, error) { return get[Token](s, "token", id) }
 func (s *Store) ListTokens() ([]Token, error)       { return list[Token](s, "token") }
 func (s *Store) DeleteToken(id string) error        { return del(s, "token", id) }
+
+// TokenByShort finds the token with a short link code.
+func (s *Store) TokenByShort(code string) (*Token, error) {
+	ts, err := s.ListTokens()
+	if err != nil {
+		return nil, err
+	}
+	for i := range ts {
+		if ts[i].Short != "" && ts[i].Short == code {
+			return &ts[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+const shortAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+// NewShortCode returns a random short link code (no look-alike characters).
+func NewShortCode(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	for i := range b {
+		b[i] = shortAlphabet[int(b[i])%len(shortAlphabet)]
+	}
+	return string(b)
+}
 
 type Access struct {
 	At        int64  `json:"at"`
@@ -328,4 +359,76 @@ func (s *Store) Tests() (map[string][]byte, error) {
 		out[k] = []byte(d)
 	}
 	return out, rows.Err()
+}
+
+// --- rule set mirror ---
+
+// RuleCache is a mirrored rule list. Body is the last good upstream copy.
+type RuleCache struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	Behavior  string `json:"behavior"`
+	Body      []byte `json:"-"`
+	Size      int    `json:"size"`
+	FetchedAt int64  `json:"fetchedAt"`
+	Error     string `json:"error,omitempty"`
+	UsedAt    int64  `json:"usedAt"`
+}
+
+// RegisterRule records a mirrored URL; existing entries are kept.
+func (s *Store) RegisterRule(id, url, behavior string) error {
+	_, err := s.db.Exec(`INSERT INTO rule_cache(id,url,behavior) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, id, url, behavior)
+	return err
+}
+
+func (s *Store) GetRule(id string) (*RuleCache, error) {
+	var r RuleCache
+	err := s.db.QueryRow(`SELECT id,url,behavior,body,fetched_at,error,used_at FROM rule_cache WHERE id=?`, id).
+		Scan(&r.ID, &r.URL, &r.Behavior, &r.Body, &r.FetchedAt, &r.Error, &r.UsedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	r.Size = len(r.Body)
+	return &r, err
+}
+
+// ListRules lists mirrored rule lists without their bodies.
+func (s *Store) ListRules() ([]RuleCache, error) {
+	rows, err := s.db.Query(`SELECT id,url,behavior,length(body),fetched_at,error,used_at FROM rule_cache ORDER BY url`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RuleCache
+	for rows.Next() {
+		var r RuleCache
+		var size sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.URL, &r.Behavior, &size, &r.FetchedAt, &r.Error, &r.UsedAt); err != nil {
+			return nil, err
+		}
+		r.Size = int(size.Int64)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// PutRuleBody stores a fresh upstream copy.
+func (s *Store) PutRuleBody(id string, body []byte, at int64) error {
+	_, err := s.db.Exec(`UPDATE rule_cache SET body=?, fetched_at=?, error='' WHERE id=?`, body, at, id)
+	return err
+}
+
+func (s *Store) SetRuleError(id, msg string) error {
+	_, err := s.db.Exec(`UPDATE rule_cache SET error=? WHERE id=?`, msg, id)
+	return err
+}
+
+func (s *Store) TouchRule(id string, at int64) error {
+	_, err := s.db.Exec(`UPDATE rule_cache SET used_at=? WHERE id=?`, at, id)
+	return err
+}
+
+func (s *Store) DeleteRule(id string) error {
+	_, err := s.db.Exec(`DELETE FROM rule_cache WHERE id=?`, id)
+	return err
 }

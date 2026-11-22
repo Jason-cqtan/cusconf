@@ -5,13 +5,15 @@ import { LatencyCell, SourceCell, TestDetail, TestToolbar, UnlockCell, reportSou
 import { Badge, Card, Empty, ErrorText, Input, PageHeader, Toggle, cx } from "../components/ui";
 import { MultiSelect } from "../components/MultiSelect";
 import { ColumnSettings, loadPrefs, orderColumns, savePrefs, type ColumnPrefs } from "../components/ColumnSettings";
+import { lang, tr } from "../i18n";
 
 // Short names where the browser's built-in ones are long or differ from common usage.
-const regionOverrides: Record<string, string> = { HK: "香港", MO: "澳门", TW: "台湾", AE: "阿联酋", GB: "英国", US: "美国", KR: "韩国" };
+// Short Chinese names where Intl's are long or formal; English uses Intl as is.
+const regionOverrides: Record<string, string> = lang === "zh" ? { HK: "香港", MO: "澳门", TW: "台湾", AE: "阿联酋", GB: "英国", US: "美国", KR: "韩国" } : {};
 let displayNames: Intl.DisplayNames | null = null;
-try { displayNames = new Intl.DisplayNames(["zh-CN"], { type: "region" }); } catch { /* old browser */ }
+try { displayNames = new Intl.DisplayNames([lang === "zh" ? "zh-CN" : "en"], { type: "region" }); } catch { /* old browser */ }
 
-/** Chinese name for any ISO 3166 region code, e.g. "MD" → "摩尔多瓦". */
+/** Localized name for any ISO 3166 region code, e.g. "MD" → "摩尔多瓦" / "Moldova". */
 export function regionLabel(code: string): string {
   if (regionOverrides[code]) return regionOverrides[code];
   try { return displayNames?.of(code) ?? code; } catch { return code; }
@@ -80,12 +82,12 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
   const srcName = (id?: string) => sources?.find((s) => s.id === id)?.name ?? "";
   const cols = useMemo<Col[]>(() => {
     const all: (Col | false)[] = [
-      { id: "name", label: "名称", sortKey: (n) => n.name, cell: (n) => <>{n.name}{n.info && <Badge color="amber" className="ml-2">机场信息</Badge>}{n.selfHosted && <Badge color="green" className="ml-2">自建</Badge>}</> },
-      { id: "region", label: "地区", sortKey: (n) => n.region || "￿", cell: (n) => n.region ? <span className="text-xs">{regionLabel(n.region)} {n.region}</span> : <span className="text-zinc-400">—</span> },
-      { id: "type", label: "类型", sortKey: (n) => n.type, cell: (n) => <Badge color="indigo">{n.type}</Badge> },
-      !compact && { id: "address", label: "地址", sortKey: (n) => `${n.server}:${String(n.port).padStart(5, "0")}`, cell: (n) => <span className="font-mono text-xs text-zinc-500">{n.server}:{n.port}</span> },
-      { id: "detail", label: "协议参数", title: "Shadowsocks 显示加密方式与插件；其它协议显示传输层（ws / grpc 等）和 TLS / REALITY", sortKey: (n) => nodeDetail(n) || "￿", cell: (n) => <span className="font-mono text-xs text-zinc-500">{nodeDetail(n) || "—"}</span> },
-      !!sources && !groupBySource && { id: "source", label: "来源", sortKey: (n) => srcName(n.source), cell: (n) => <span className="text-xs text-zinc-500">{srcName(n.source)}</span> },
+      { id: "name", label: tr("名称"), sortKey: (n) => n.name, cell: (n) => <>{n.name}{n.info && <Badge color="amber" className="ml-2">{tr("机场信息")}</Badge>}{n.selfHosted && <Badge color="green" className="ml-2">{tr("自建")}</Badge>}</> },
+      { id: "region", label: tr("地区"), sortKey: (n) => n.region || "￿", cell: (n) => n.region ? <span className="text-xs">{regionLabel(n.region)} {n.region}</span> : <span className="text-zinc-400">—</span> },
+      { id: "type", label: tr("类型"), sortKey: (n) => n.type, cell: (n) => <Badge color="indigo">{n.type}</Badge> },
+      !compact && { id: "address", label: tr("地址"), sortKey: (n) => `${n.server}:${String(n.port).padStart(5, "0")}`, cell: (n) => <span className="font-mono text-xs text-zinc-500">{n.server}:{n.port}</span> },
+      { id: "detail", label: tr("协议参数"), title: tr("Shadowsocks 显示加密方式与插件；其它协议显示传输层（ws / grpc 等）和 TLS / REALITY"), sortKey: (n) => nodeDetail(n) || "￿", cell: (n) => <span className="font-mono text-xs text-zinc-500">{nodeDetail(n) || "—"}</span> },
+      !!sources && !groupBySource && { id: "source", label: tr("来源"), sortKey: (n) => srcName(n.source), cell: (n) => <span className="text-xs text-zinc-500">{srcName(n.source)}</span> },
     ];
     const base = all.filter(Boolean) as Col[];
     if (!results) return base;
@@ -189,12 +191,12 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
         <td className={cx("sticky right-0 border-b border-zinc-100 dark:border-zinc-800/60 px-1 text-right", cellBg)}>
           {onTestNode && !n.info && (
             testing?.has(n.key)
-              ? <Loader2 size={14} className="mx-1.5 inline animate-spin text-indigo-500" aria-label="测试中" />
+              ? <Loader2 size={14} className="mx-1.5 inline animate-spin text-indigo-500" aria-label={tr("测试中")} />
               : (
                 <button
                   type="button"
-                  title="立即测试此节点（延迟、出口 IP、服务）"
-                  aria-label="测试此节点"
+                  title={tr("立即测试此节点（延迟、出口 IP、服务）")}
+                  aria-label={tr("测试此节点")}
                   onClick={() => onTestNode(n)}
                   className="rounded p-1.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 hover:bg-zinc-100 hover:text-indigo-600 dark:hover:bg-zinc-700"
                 >
@@ -207,7 +209,7 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
     );
   }
 
-  if (nodes.length === 0) return <Empty>没有节点</Empty>;
+  if (nodes.length === 0) return <Empty>{tr("没有节点")}</Empty>;
   return (
     <div className={cx("overflow-auto", className)}>
       <table ref={tableRef} className="w-full min-w-max border-separate border-spacing-0 text-sm">
@@ -218,7 +220,7 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
                 key={c.id}
                 ref={(el) => { thRefs.current[i] = el; }}
                 style={pin(i)}
-                title={c.title ?? "点击排序，拖动调整列顺序"}
+                title={c.title ?? tr("点击排序，拖动调整列顺序")}
                 draggable
                 onDragStart={(e) => { setDragging(c.id); e.dataTransfer.effectAllowed = "move"; }}
                 onDragEnd={() => { setDragging(null); setOver(null); }}
@@ -243,8 +245,8 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
             <th className="sticky top-0 right-0 z-20 w-10 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-1 text-right">
               <button
                 type="button"
-                title="列设置"
-                aria-label="列设置"
+                title={tr("列设置")}
+                aria-label={tr("列设置")}
                 onClick={() => setSettingsOpen(true)}
                 className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               >
@@ -268,12 +270,12 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource, r
                       >
                         <span className="sticky left-3 inline-flex items-center gap-2 text-sm">
                           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          <span className="font-medium">{g.src?.name ?? (g.id || "未知来源")}</span>
-                          {g.src?.selfHosted && <Badge color="green">自建</Badge>}
-                          <Badge>{g.rows.length} 个节点</Badge>
-                          {g.src && <Badge color={g.src.kind === "url" ? "indigo" : "zinc"}>{g.src.kind === "url" ? "订阅" : "手动"}</Badge>}
-                          {info && info.total > 0 && <span className="text-xs text-zinc-500">流量 {formatBytes(info.upload + info.download)} / {formatBytes(info.total)}</span>}
-                          {info && info.expire > 0 && <span className="text-xs text-zinc-500">到期 {new Date(info.expire * 1000).toLocaleDateString()}</span>}
+                          <span className="font-medium">{g.src?.name ?? (g.id || tr("未知来源"))}</span>
+                          {g.src?.selfHosted && <Badge color="green">{tr("自建")}</Badge>}
+                          <Badge>{g.rows.length} {tr("个节点")}</Badge>
+                          {g.src && <Badge color={g.src.kind === "url" ? "indigo" : "zinc"}>{g.src.kind === "url" ? tr("订阅") : tr("手动")}</Badge>}
+                          {info && info.total > 0 && <span className="text-xs text-zinc-500">{tr("流量")} {formatBytes(info.upload + info.download)} / {formatBytes(info.total)}</span>}
+                          {info && info.expire > 0 && <span className="text-xs text-zinc-500">{tr("到期")} {new Date(info.expire * 1000).toLocaleDateString()}</span>}
                         </span>
                       </td>
                     </tr>
@@ -306,8 +308,8 @@ function testColumns(results: Record<string, TestResult>, services: { id: string
     return r && show ? <button type="button" className="text-left" onClick={() => show(r)}>{el}</button> : el;
   };
   return [
-    { id: "latency", label: "延迟", sortKey: (n) => { const r = R(n); return !r ? "z" : r.latency > 0 ? pad(r.latency) : "y"; }, cell: (n) => wrap(n, <LatencyCell r={R(n)} />) },
-    { id: "exit", label: "出口", sortKey: (n) => R(n)?.exit?.country ?? "\uffff", cell: (n) => {
+    { id: "latency", label: tr("延迟"), sortKey: (n) => { const r = R(n); return !r ? "z" : r.latency > 0 ? pad(r.latency) : "y"; }, cell: (n) => wrap(n, <LatencyCell r={R(n)} />) },
+    { id: "exit", label: tr("出口"), sortKey: (n) => R(n)?.exit?.country ?? "\uffff", cell: (n) => {
       const e = R(n)?.exit;
       return wrap(n, e ? <span className="text-xs" title={[e.ip, e.isp].filter(Boolean).join(" · ")}>{e.country ? `${regionLabel(e.country)} ${e.country}` : "—"} <span className="font-mono text-zinc-500">{e.ip}</span></span> : <span className="text-zinc-400">—</span>);
     } },
@@ -315,7 +317,7 @@ function testColumns(results: Record<string, TestResult>, services: { id: string
     // One column per IP data source: its safety score (if it gives one), its labels,
     // or why it failed. Sources rate differently, so nothing is merged.
     ...reportSources(results).map((src): Col => ({
-      id: `src:${src}`, label: src, title: `${src}：安全分（0–100，越大越安全）与标记`,
+      id: `src:${src}`, label: src, title: tr("{0}：安全分（0–100，越大越安全）与标记", src),
       sortKey: (n) => {
         const rep = R(n)?.reports?.find((x) => x.source === src);
         if (!rep || rep.error) return "z";
@@ -323,8 +325,8 @@ function testColumns(results: Record<string, TestResult>, services: { id: string
       },
       cell: (n) => wrap(n, <SourceCell r={R(n)} src={src} />),
     })),
-    { id: "unlock", label: "解锁", title: "可用的流媒体 / AI 服务；½ 表示部分可用", sortKey: (n) => String(100 - Object.values(R(n)?.services ?? {}).filter((s) => s.status === "yes").length).padStart(3, "0"), cell: (n) => wrap(n, <UnlockCell r={R(n)} services={services} />) },
-    { id: "tested", label: "测试时间", sortKey: (n) => String(1e12 - (R(n)?.testedAt ?? 0)), cell: (n) => <span className="text-xs text-zinc-500">{formatTime(R(n)?.testedAt)}</span> },
+    { id: "unlock", label: tr("解锁"), title: tr("可用的流媒体 / AI 服务；½ 表示部分可用"), sortKey: (n) => String(100 - Object.values(R(n)?.services ?? {}).filter((s) => s.status === "yes").length).padStart(3, "0"), cell: (n) => wrap(n, <UnlockCell r={R(n)} services={services} />) },
+    { id: "tested", label: tr("测试时间"), sortKey: (n) => String(1e12 - (R(n)?.testedAt ?? 0)), cell: (n) => <span className="text-xs text-zinc-500">{formatTime(R(n)?.testedAt)}</span> },
   ];
 }
 
@@ -357,7 +359,7 @@ export default function NodesPage() {
       const r = await api.testNode(n.key);
       setResults((prev) => ({ ...prev, [r.key]: r }));
     } catch (e) {
-      setErr(`${n.name}：${(e as Error).message}`);
+      setErr(tr("{0}：{1}", n.name, (e as Error).message));
     } finally {
       setTesting((s) => { const x = new Set(s); x.delete(n.key); return x; });
     }
@@ -377,7 +379,7 @@ export default function NodesPage() {
     const opts = [...c.keys()].filter((r) => r !== UNKNOWN)
       .sort((a, b) => (c.get(b)! - c.get(a)!) || a.localeCompare(b))
       .map((r) => ({ value: r, label: `${regionLabel(r)} ${r}`, count: c.get(r) }));
-    if (c.has(UNKNOWN)) opts.push({ value: UNKNOWN, label: "未识别", count: c.get(UNKNOWN) });
+    if (c.has(UNKNOWN)) opts.push({ value: UNKNOWN, label: tr("未识别"), count: c.get(UNKNOWN) });
     return opts;
   }, [nodes]);
   const sourceOptions = useMemo(() => {
@@ -398,24 +400,23 @@ export default function NodesPage() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0">
         <PageHeader
-          title="节点"
-          desc="所有启用订阅源的节点。地区由节点名自动识别；测试结果可在策略组中按延迟、出口地区、风险和解锁情况筛选。"
+          title={tr("节点")}
+          desc={tr("所有启用订阅源的节点。地区由节点名自动识别；测试结果可在策略组中按延迟、出口地区、风险和解锁情况筛选。")}
           actions={<TestToolbar nodes={shown} sources={sources} onFinished={loadResults} />}
         />
         <ErrorText error={err} />
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Input className="w-full sm:w-64" placeholder="搜索名称或地址" value={q} onChange={(e) => setQ(e.target.value)} />
-          <MultiSelect className="w-full sm:w-40" placeholder="全部类型" options={typeOptions} value={types} onChange={setTypes} />
-          <MultiSelect className="w-full sm:w-44" placeholder="全部地区" options={regionOptions} value={regions} onChange={setRegions} />
-          {sourceOptions.length > 1 && <MultiSelect className="w-full sm:w-44" placeholder="全部来源" options={sourceOptions} value={srcs} onChange={setSrcs} />}
+          <Input className="w-full sm:w-64" placeholder={tr("搜索名称或地址")} value={q} onChange={(e) => setQ(e.target.value)} />
+          <MultiSelect className="w-full sm:w-40" placeholder={tr("全部类型")} options={typeOptions} value={types} onChange={setTypes} />
+          <MultiSelect className="w-full sm:w-44" placeholder={tr("全部地区")} options={regionOptions} value={regions} onChange={setRegions} />
+          {sourceOptions.length > 1 && <MultiSelect className="w-full sm:w-44" placeholder={tr("全部来源")} options={sourceOptions} value={srcs} onChange={setSrcs} />}
           <span className="text-sm text-zinc-500">{shown.length} / {nodes.length}</span>
-          {sources.length > 1 && <span className="ml-auto"><Toggle checked={grouped} onChange={setGrouped} label="按来源分组" /></span>}
+          {sources.length > 1 && <span className="ml-auto"><Toggle checked={grouped} onChange={setGrouped} label={tr("按来源分组")} /></span>}
         </div>
       </div>
       {intercepted > 0 && (
         <p className="mb-3 shrink-0 rounded-md bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-          ⚠ {intercepted} 个节点的测试连接被本机代理软件接管（节点服务器被解析为 Fake IP 198.18.x.x），会按该软件的规则转发、可能被套进其它代理，结果不可信。
-          在 Surge 中添加规则 <code>PROCESS-NAME,cusconf,DIRECT</code>（放在规则最前面），或把 cusconf 部署在不经过本机代理的环境中，然后重新测试。
+          ⚠ {intercepted} {tr("个节点的测试连接被本机代理软件接管（节点服务器被解析为 Fake IP 198.18.x.x），会按该软件的规则转发、可能被套进其它代理，结果不可信。 在 Surge 中添加规则")} <code>PROCESS-NAME,mihomo,DIRECT</code>{tr("（放在规则最前面；节点测试由 cusconf 启动的 mihomo 进程连接节点），或把 cusconf 部署在不经过本机代理的环境中，然后重新测试。")}
         </p>
       )}
       <Card className="min-h-0 flex-1 overflow-hidden">

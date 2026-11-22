@@ -2,6 +2,7 @@ import type { Rule } from "../api";
 import { acl4ssr, bm7 } from "./rulePresets";
 import { acl4ssrFiles } from "./acl4ssrFiles";
 import { uid, type EditableGroup, type EditableProfile, type EditableRule } from "./ProfileEditor";
+import { tr } from "../i18n";
 
 const QURE = "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/";
 const LOBE = "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@1.97.1/light/";
@@ -68,7 +69,7 @@ function extraRules(text: string | undefined, policy: string): EditableRule[] {
 
 export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
   {
-    category: "AI 服务",
+    category: tr("AI 服务"),
     items: [
       { name: "OpenAI", icon: QURE + "ChatGPT.png", ruleSets: ["OpenAi"] },
       // ACL4SSR's Claude.list only has anthropic.com and claude.ai.
@@ -79,7 +80,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
     ],
   },
   {
-    category: "流媒体",
+    category: tr("流媒体"),
     items: [
       { name: "Netflix", icon: QURE + "Netflix.png", ruleSets: ["Netflix"] },
       { name: "Disney+", icon: QURE + "Disney+.png", ruleSets: ["DisneyPlus"] },
@@ -92,7 +93,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
     ],
   },
   {
-    category: "音乐",
+    category: tr("音乐"),
     items: [
       { name: "Spotify", icon: QURE + "Spotify.png", ruleSets: ["Spotify"] },
       { name: "Apple Music", icon: QURE + "Apple_Music.png", ruleSets: ["AppleMusic"] },
@@ -100,7 +101,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
     ],
   },
   {
-    category: "社交通讯",
+    category: tr("社交通讯"),
     items: [
       { name: "Telegram", icon: QURE + "Telegram.png", ruleSets: ["Telegram"] },
       { name: "X", icon: QURE + "Twitter.png", ruleSets: ["Twitter"] },
@@ -108,7 +109,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
     ],
   },
   {
-    category: "常用服务",
+    category: tr("常用服务"),
     items: [
       { name: "Google", icon: QURE + "Google_Search.png", ruleSets: ["Google"] },
       { name: "GitHub", icon: QURE + "GitHub.png", ruleSets: ["Github"] },

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cusconf/cusconf/internal/node"
 	"github.com/cusconf/cusconf/internal/store"
 )
 
@@ -25,7 +26,12 @@ func TestSmoke(t *testing.T) {
 			if !strings.Contains(n.Name, w) {
 				continue
 			}
-			r := Test(context.Background(), n, DefaultSettings(), Checks{IP: true, Services: true})
+			core, err := StartCore(context.Background(), []*node.Node{n})
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := Test(context.Background(), core, n, DefaultSettings(), Checks{IP: true, Services: true})
+			core.Close()
 			b, _ := json.MarshalIndent(r, "", "  ")
 			t.Logf("%s", b)
 			break

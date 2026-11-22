@@ -108,7 +108,7 @@ export interface TestSettings {
   scheduleHours: number;
   sources?: string[] | null;
 }
-export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean } }
+export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean }; /** The job could not run, e.g. mihomo is missing. */ error?: string }
 
 export type GroupType = "select" | "url-test" | "fallback" | "load-balance" | "smart";
 
@@ -138,6 +138,8 @@ export interface RuleSet {
   surgeUrl?: string;
   stashUrl?: string;
   stashFormat?: "yaml" | "text";
+  /** Optional sing-box rule set (.srs / .json); without it sing-box loads a converted copy from the mirror. */
+  singboxUrl?: string;
   interval?: number;
 }
 
@@ -155,6 +157,8 @@ export interface General {
   disableServerDirect?: boolean;
   /** Resolves node server / subscription domains with this DNS (generated [Host] entries). */
   serverDns?: string;
+  /** Serve every rule set through this server's mirror (sing-box / Quantumult X use it either way). */
+  mirrorRules?: boolean;
 }
 
 export interface Profile {
@@ -169,7 +173,7 @@ export interface Profile {
   general: General;
 }
 
-export type Client = "surge" | "stash";
+export type Client = "surge" | "stash" | "clash-meta" | "flclash" | "sing-box" | "loon" | "qx";
 export interface Target { client: Client; platform: string; version: string }
 
 export interface Token {
@@ -181,6 +185,8 @@ export interface Token {
   maxUses?: number;
   revoked: boolean;
   createdAt: number;
+  /** Short link code: /s/{short}. */
+  short?: string;
   uses: number;
   lastUsedAt?: number;
   lastIp?: string;
@@ -190,12 +196,28 @@ export interface Token {
 export interface Warning { kind: string; name: string; message: string }
 export interface RenderResult { content: string; contentType: string; warnings: Warning[] | null }
 
-export interface Capabilities {
-  clients: Record<Client, {
-    platforms: Record<string, { label: string; latest: string }>;
-    features: Record<string, Record<string, string | boolean>>;
-  }>;
+export interface ClientInfo {
+  label: string;
+  order: number;
+  ext: string;
+  /** URL template that opens the app and imports the config; {url} and {name} get replaced. */
+  import?: string;
+  platforms: Record<string, { label: string; latest: string; order: number }>;
+  features: Record<string, Record<string, string | boolean>>;
 }
+
+export interface Capabilities { clients: Record<Client, ClientInfo> }
+
+/** Clients in display order. */
+export const clientList = (caps: Capabilities | null) =>
+  Object.entries(caps?.clients ?? {}).sort(([, a], [, b]) => a.order - b.order) as [Client, ClientInfo][];
+
+/** Platforms of a client in display order. */
+export const platformList = (ci?: ClientInfo) => Object.entries(ci?.platforms ?? {}).sort(([, a], [, b]) => a.order - b.order);
+
+export const defaultPlatform = (ci?: ClientInfo) => (ci?.platforms.ios ? "ios" : platformList(ci)[0]?.[0] ?? "ios");
+
+export interface MirrorEntry { id: string; url: string; behavior: string; size: number; fetchedAt: number; error?: string; usedAt: number }
 
 export interface Access { at: number; ip: string; userAgent: string; status: number }
 
@@ -264,13 +286,25 @@ export const api = {
   saveToken: (t: Partial<Token>) => t.token ? req<Token>("PUT", `/tokens/${t.token}`, t) : req<Token>("POST", "/tokens", t),
   deleteToken: (t: string) => req<void>("DELETE", `/tokens/${t}`),
   access: (t: string) => req<Access[]>("GET", `/tokens/${t}/access`),
+  createShort: (t: string) => req<Token>("POST", `/tokens/${t}/short`),
+  deleteShort: (t: string) => req<Token>("DELETE", `/tokens/${t}/short`),
+
+  mirror: () => req<MirrorEntry[]>("GET", "/mirror"),
+  refreshMirror: (id: string) => req<MirrorEntry>("POST", `/mirror/${id}/refresh`),
+  deleteMirror: (id: string) => req<void>("DELETE", `/mirror/${id}`),
 };
 
 export const subURL = (token: string) => `${location.origin}/sub/${token}`;
+export const shortURL = (code: string) => `${location.origin}/s/${code}`;
 
-export function installURL(t: Token): string {
-  const u = encodeURIComponent(subURL(t.token));
-  return t.target.client === "surge" ? `surge:///install-config?url=${u}` : `stash://install-config?url=${u}`;
+/** The link the client should use: the short link when there is one. */
+export const tokenURL = (t: Token) => (t.short ? shortURL(t.short) : subURL(t.token));
+
+/** One-tap import link for the token's client, or null when the client has none. */
+export function installURL(t: Token, caps: Capabilities | null): string | null {
+  const tpl = caps?.clients[t.target.client]?.import;
+  if (!tpl) return null;
+  return tpl.replace("{url}", encodeURIComponent(tokenURL(t))).replace("{name}", encodeURIComponent(t.name));
 }
 
 export function formatBytes(n: number): string {

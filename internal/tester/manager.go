@@ -25,6 +25,7 @@ type Job struct {
 	StartedAt  int64  `json:"startedAt,omitempty"`
 	FinishedAt int64  `json:"finishedAt,omitempty"`
 	Scheduled  bool   `json:"scheduled,omitempty"`
+	Error      string `json:"error,omitempty"` // the job could not run (e.g. mihomo missing)
 }
 
 type Manager struct {
@@ -161,7 +162,13 @@ func (m *Manager) Start(nodes []*node.Node, c Checks, scheduled bool) (Job, erro
 // stores and returns the result.
 func (m *Manager) TestOne(ctx context.Context, n *node.Node, c Checks) Result {
 	m.Results() // load the cache
-	r := Test(ctx, n, m.Settings(), c)
+	core, err := StartCore(ctx, []*node.Node{n})
+	if err != nil {
+		// Not stored: the failure is about this machine, not the node.
+		return Result{Key: n.Key(), Name: n.Name, TestedAt: time.Now().Unix(), Error: err.Error()}
+	}
+	defer core.Close()
+	r := Test(ctx, core, n, m.Settings(), c)
 	m.save(r, c)
 	return r
 }
@@ -184,6 +191,17 @@ func (m *Manager) save(r Result, c Checks) Result {
 
 func (m *Manager) run(ctx context.Context, nodes []*node.Node, c Checks) {
 	s := m.Settings()
+	core, err := StartCore(ctx, nodes)
+	if err != nil {
+		slog.Error("node test: start mihomo", "err", err)
+		m.mu.Lock()
+		m.job.Running, m.job.Error = false, err.Error()
+		m.job.FinishedAt = time.Now().Unix()
+		m.cancel = nil
+		m.mu.Unlock()
+		return
+	}
+	defer core.Close()
 	work := make(chan *node.Node)
 	var wg sync.WaitGroup
 	for range s.Concurrency {
@@ -191,7 +209,7 @@ func (m *Manager) run(ctx context.Context, nodes []*node.Node, c Checks) {
 		go func() {
 			defer wg.Done()
 			for n := range work {
-				r := Test(ctx, n, s, c)
+				r := Test(ctx, core, n, s, c)
 				if ctx.Err() != nil {
 					return // cancelled mid-test: do not store a bogus failure
 				}

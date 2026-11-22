@@ -95,20 +95,54 @@ func Default(counts map[string]int, selfHosted int) Profile {
 	// domains / IPs direct. Like the groups, service rule sets come with the group templates.
 	p.RuleSets = []RuleSet{
 		ACL4SSR("LocalAreaNetwork", "LocalAreaNetwork.list"),
+		ACL4SSR("BanAD", "BanAD.list"),
+		ACL4SSR("BanProgramAD", "BanProgramAD.list"),
+		ACL4SSR("Apple", "Apple.list"),
+		ACL4SSR("AI", "Ruleset/AI.list"),
+		ACL4SSR("Twitter", "Ruleset/Twitter.list"),
 		ACL4SSR("ProxyGFWlist", "ProxyGFWlist.list"),
 		ACL4SSR("ChinaDomain", "ChinaDomain.list"),
 		ACL4SSR("ChinaCompanyIp", "ChinaCompanyIp.list"),
+		ACL4SSR("ChinaIp", "ChinaIp.list"),
+		ACL4SSR("Download", "Download.list"),
+	}
+	// AI services (OpenAI, Claude, Gemini, …) refuse Hong Kong / mainland exits: prefer
+	// the US group, then other supported regions, then the global group.
+	aiPolicy := GlobalGroup
+	for _, code := range []string{"SG", "JP", "TW", "US"} {
+		for _, g := range regions {
+			if g.Name == node.RegionName(code) {
+				aiPolicy = g.Name
+			}
+		}
+	}
+	// Overseas DoH follows the rules (encrypted-dns-follow-outbound-mode), so it gets a
+	// stable, automatically switching group: one slow node must not break all DNS.
+	dohPolicy := GlobalGroup
+	for _, g := range regions {
+		if g.Name == node.RegionName("HK") {
+			dohPolicy = g.Name
+		}
 	}
 	p.Rules = []Rule{
 		{Type: "RULE-SET", Value: "LocalAreaNetwork", Policy: "DIRECT"},
+		{Type: "DOMAIN", Value: "cloudflare-dns.com", Policy: dohPolicy, Comment: "指向自动切换的稳定组"},
+		{Type: "DOMAIN", Value: "dns.google", Policy: dohPolicy},
 		{Type: "DOMAIN-WILDCARD", Value: "*pcdn*.biliapi.net", Policy: "REJECT", Comment: "解决观看B 站卡顿"},
 		{Type: "DOMAIN-SUFFIX", Value: "mcdn.bilivideo.cn", Policy: "REJECT"},
 		{Type: "DOMAIN-SUFFIX", Value: "mcdn.bilivideo.com", Policy: "REJECT"},
 		{Type: "DOMAIN-SUFFIX", Value: "szbdyd.com", Policy: "REJECT"},
 		{Type: "DOMAIN-SUFFIX", Value: "mountaintoys.cn", Policy: "REJECT"},
+		{Type: "RULE-SET", Value: "BanAD", Policy: "REJECT", Comment: "广告拦截"},
+		{Type: "RULE-SET", Value: "BanProgramAD", Policy: "REJECT"},
+		{Type: "RULE-SET", Value: "Apple", Policy: "DIRECT", Comment: "苹果服务国内可直连"},
+		{Type: "RULE-SET", Value: "AI", Policy: aiPolicy, Comment: "AI 服务不支持香港与内地出口"},
+		{Type: "RULE-SET", Value: "Twitter", Policy: GlobalGroup},
 		{Type: "RULE-SET", Value: "ProxyGFWlist", Policy: GlobalGroup},
 		{Type: "RULE-SET", Value: "ChinaDomain", Policy: "DIRECT"},
 		{Type: "RULE-SET", Value: "ChinaCompanyIp", Policy: "DIRECT", NoResolve: true},
+		{Type: "RULE-SET", Value: "ChinaIp", Policy: "DIRECT", NoResolve: true},
+		{Type: "RULE-SET", Value: "Download", Policy: "DIRECT", Comment: "下载类直连"},
 		{Type: "GEOIP", Value: "CN", Policy: "DIRECT"},
 		{Type: "FINAL", Policy: FinalGroup},
 	}

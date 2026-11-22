@@ -1,0 +1,18 @@
+cusconf
+Copyright 2026 Jason
+
+Licensed under the Apache License, Version 2.0, with the "Commons Clause"
+License Condition v1.0 (see LICENSE). You may use, copy, modify, distribute and
+deploy it, including internally within an organization, free of charge, but you
+may not Sell it as defined in LICENSE.
+
+Third-party software
+--------------------
+
+mihomo (https://github.com/MetaCubeX/mihomo) is licensed under the GNU General
+Public License v3.0. It is not part of cusconf and is not linked into the
+cusconf program: cusconf runs the separate, unmodified mihomo executable for
+node testing. The Docker image ships that executable together with its license
+at /usr/share/licenses/mihomo/LICENSE; its source code is available at
+https://github.com/MetaCubeX/mihomo (the version is set by MIHOMO_VERSION in
+the Dockerfile).

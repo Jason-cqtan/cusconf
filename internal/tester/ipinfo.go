@@ -15,9 +15,11 @@ import (
 
 // IPSource describes an HTTP API that reports information about an IP.
 //
-// If URL contains "{ip}", it is called directly (not through the node) with the
-// exit IP found by an earlier source; this suits APIs that need a key. Otherwise
-// it is called through the node and reports on the node's exit IP.
+// Every source is called through the node. If URL contains "{ip}", it is filled
+// with the exit IP found by an earlier source (for APIs that look up a given IP);
+// otherwise the API reports on the address it sees, the node's exit IP. Going
+// through the node keeps the tests independent of this machine's DNS and proxy
+// setup, and the lookup sites never see this machine's own IP.
 //
 // Fields are dot paths into the JSON response ("location.country_code",
 // "data.0.score"); a "{ip}" segment stands for the exit IP ("{ip}.risk").
@@ -99,13 +101,15 @@ func (s IPSource) Query(ctx context.Context, via *http.Client, ip string, timeou
 	r := IPReport{Source: s.Name}
 	url := s.URL
 	client := via
+	if client == nil { // unit tests: query directly
+		client = &http.Client{Timeout: timeout}
+	}
 	if strings.Contains(url, "{ip}") {
 		if ip == "" {
 			r.Error = "未获取到出口 IP（经节点查询的来源都失败了）"
 			return r
 		}
 		url = strings.ReplaceAll(url, "{ip}", ip)
-		client = &http.Client{Timeout: timeout}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

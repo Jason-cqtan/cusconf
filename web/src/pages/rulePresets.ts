@@ -1,5 +1,6 @@
 import type { RuleSet } from "../api";
 import { acl4ssrFiles } from "./acl4ssrFiles";
+import { tr } from "../i18n";
 
 /** A repository of ready-made rule lists. */
 export interface PresetSource {
@@ -40,17 +41,17 @@ export function acl4ssr(name: string): RuleSet {
 
 // The lists behind the widely used ACL4SSR_Online config, in its usual rule order.
 const aclCommon: [string, string][] = [
-  ["LocalAreaNetwork", "局域网 / 内网直连"],
-  ["UnBan", "解除误判（直连）"],
-  ["BanAD", "广告拦截"],
-  ["BanProgramAD", "应用内广告拦截"],
-  ["GoogleFCM", "谷歌推送 FCM"],
-  ["GoogleCN", "谷歌中国服务（直连）"],
-  ["SteamCN", "Steam 国内 CDN（直连）"],
-  ["Microsoft", "微软服务"],
-  ["Apple", "苹果服务"],
+  ["LocalAreaNetwork", tr("局域网 / 内网直连")],
+  ["UnBan", tr("解除误判（直连）")],
+  ["BanAD", tr("广告拦截")],
+  ["BanProgramAD", tr("应用内广告拦截")],
+  ["GoogleFCM", tr("谷歌推送 FCM")],
+  ["GoogleCN", tr("谷歌中国服务（直连）")],
+  ["SteamCN", tr("Steam 国内 CDN（直连）")],
+  ["Microsoft", tr("微软服务")],
+  ["Apple", tr("苹果服务")],
   ["Telegram", "Telegram"],
-  ["AI", "AI 服务合集"],
+  ["AI", tr("AI 服务合集")],
   ["OpenAi", "OpenAI / ChatGPT"],
   ["Claude", "Claude"],
   ["Gemini", "Gemini"],
@@ -63,17 +64,17 @@ const aclCommon: [string, string][] = [
   ["Github", "GitHub"],
   ["Steam", "Steam"],
   ["Epic", "Epic Games"],
-  ["Nintendo", "任天堂"],
-  ["Bilibili", "哔哩哔哩"],
-  ["BilibiliHMT", "哔哩哔哩港澳台"],
-  ["ProxyMedia", "国外媒体"],
-  ["ChinaMedia", "国内媒体（直连）"],
-  ["ProxyGFWlist", "代理列表（GFW）"],
-  ["ProxyLite", "精简代理列表"],
-  ["ChinaDomain", "国内域名（直连）"],
-  ["ChinaCompanyIp", "国内公司 IP（直连）"],
-  ["ChinaIp", "中国 IP（直连）"],
-  ["Download", "下载类（直连）"],
+  ["Nintendo", tr("任天堂")],
+  ["Bilibili", tr("哔哩哔哩")],
+  ["BilibiliHMT", tr("哔哩哔哩港澳台")],
+  ["ProxyMedia", tr("国外媒体")],
+  ["ChinaMedia", tr("国内媒体（直连）")],
+  ["ProxyGFWlist", tr("代理列表（GFW）")],
+  ["ProxyLite", tr("精简代理列表")],
+  ["ChinaDomain", tr("国内域名（直连）")],
+  ["ChinaCompanyIp", tr("国内公司 IP（直连）")],
+  ["ChinaIp", tr("中国 IP（直连）")],
+  ["Download", tr("下载类（直连）")],
 ];
 
 // ACL4SSR first: it is the default source in the picker.

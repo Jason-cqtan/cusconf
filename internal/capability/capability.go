@@ -16,14 +16,25 @@ var matrixYAML []byte
 type Client string
 
 const (
-	Surge Client = "surge"
-	Stash Client = "stash"
+	Surge     Client = "surge"
+	Stash     Client = "stash"
+	ClashMeta Client = "clash-meta" // mihomo core: Clash Verge Rev, Clash Meta for Android, …
+	FlClash   Client = "flclash"    // FlClash app (mihomo core)
+	SingBox   Client = "sing-box"
+	Loon      Client = "loon"
+	QX        Client = "qx" // Quantumult X
 )
+
+// Mihomo reports whether the client uses the mihomo (Clash Meta) config dialect.
+func (c Client) Mihomo() bool { return c == ClashMeta || c == FlClash }
+
+// Clash reports whether the client takes a Clash-style YAML config.
+func (c Client) Clash() bool { return c == Stash || c.Mihomo() }
 
 // Target identifies a concrete client build to generate for.
 type Target struct {
 	Client   Client `json:"client"`
-	Platform string `json:"platform"` // ios | mac
+	Platform string `json:"platform"` // ios | mac | all …
 	Version  string `json:"version"`  // empty = latest
 }
 
@@ -31,10 +42,16 @@ func (t Target) String() string { return fmt.Sprintf("%s-%s %s", t.Client, t.Pla
 
 type PlatformInfo struct {
 	Label  string `yaml:"label" json:"label"`
+	Order  int    `yaml:"order" json:"order"`
 	Latest string `yaml:"latest" json:"latest"`
 }
 
 type ClientInfo struct {
+	Label string `yaml:"label" json:"label"`
+	Order int    `yaml:"order" json:"order"`
+	Ext   string `yaml:"ext" json:"ext"` // file extension of the config
+	// Import is a URL template that opens the client and imports the config; {url} and {name} are escaped.
+	Import    string                    `yaml:"import" json:"import,omitempty"`
 	Platforms map[string]PlatformInfo   `yaml:"platforms" json:"platforms"`
 	Features  map[string]map[string]any `yaml:"features" json:"features"`
 }
@@ -60,7 +77,7 @@ func (mx *Matrix) Validate(t *Target) error {
 		return fmt.Errorf("unknown client %q", t.Client)
 	}
 	if t.Platform == "" {
-		t.Platform = "ios"
+		t.Platform = ci.DefaultPlatform()
 	}
 	p, ok := ci.Platforms[t.Platform]
 	if !ok {
@@ -69,7 +86,24 @@ func (mx *Matrix) Validate(t *Target) error {
 	if t.Version == "" || t.Version == "latest" {
 		t.Version = p.Latest
 	}
+	if !mx.Supports(*t, "min") {
+		return fmt.Errorf("%s %s is too old: %s", p.Label, t.Version, mx.Requirement(*t, "min"))
+	}
 	return nil
+}
+
+// DefaultPlatform is "ios" when the client has it, else its first platform.
+func (ci ClientInfo) DefaultPlatform() string {
+	if _, ok := ci.Platforms["ios"]; ok {
+		return "ios"
+	}
+	best, order := "", 0
+	for k, p := range ci.Platforms {
+		if best == "" || p.Order < order || (p.Order == order && k < best) {
+			best, order = k, p.Order
+		}
+	}
+	return best
 }
 
 // Supports reports whether target supports the feature. Unknown features are

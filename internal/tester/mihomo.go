@@ -9,13 +9,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/metacubex/mihomo/adapter"
-	C "github.com/metacubex/mihomo/constant"
-
 	"github.com/cusconf/cusconf/internal/node"
 )
 
-// ToMihomo converts a node to a mihomo (Clash.Meta) proxy mapping.
+// ToMihomo converts a node to a mihomo (Clash.Meta) proxy mapping, written into
+// the config of the mihomo core process (see core.go).
 func ToMihomo(n *node.Node) (map[string]any, error) {
 	m := map[string]any{"name": n.Name, "type": string(n.Type), "server": n.Server, "port": n.Port, "udp": true}
 	if n.TFO {
@@ -228,30 +226,14 @@ func or(a, b string) string {
 	return b
 }
 
-// Proxy is a dialable node.
-type Proxy struct{ p C.Proxy }
-
-// NewProxy builds a mihomo outbound for the node.
-func NewProxy(n *node.Node) (*Proxy, error) {
-	m, err := ToMihomo(n)
-	if err != nil {
-		return nil, err
-	}
-	p, err := adapter.ParseProxy(m)
-	if err != nil {
-		return nil, fmt.Errorf("mihomo: %w", err)
-	}
-	return &Proxy{p: p}, nil
-}
+// Proxy is a dialable node: a SOCKS5 listener of the mihomo core process that
+// forwards everything through that node.
+type Proxy struct{ addr string }
 
 // Dial opens a TCP connection to addr ("host:port") through the node.
 // The host name is resolved on the remote side.
 func (p *Proxy) Dial(ctx context.Context, addr string) (net.Conn, error) {
-	md := &C.Metadata{NetWork: C.TCP, Type: C.INNER}
-	if err := md.SetRemoteAddress(addr); err != nil {
-		return nil, err
-	}
-	return p.p.DialContext(ctx, md)
+	return socks5Dial(ctx, p.addr, addr)
 }
 
 // Client returns an HTTP client that sends every request through the node.
@@ -273,13 +255,6 @@ func (p *Proxy) Client(timeout time.Duration, follow bool) *http.Client {
 		c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	return c
-}
-
-// Close releases the outbound's resources.
-func (p *Proxy) Close() {
-	if c, ok := p.p.Adapter().(interface{ Close() error }); ok {
-		c.Close()
-	}
 }
 
 // Latency measures an HTTP round trip through the node, like Surge/Clash url-test:

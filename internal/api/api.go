@@ -24,6 +24,7 @@ import (
 	"github.com/cusconf/cusconf/internal/parser"
 	"github.com/cusconf/cusconf/internal/profile"
 	"github.com/cusconf/cusconf/internal/render"
+	"github.com/cusconf/cusconf/internal/ruleset"
 	"github.com/cusconf/cusconf/internal/source"
 	"github.com/cusconf/cusconf/internal/store"
 	"github.com/cusconf/cusconf/internal/tester"
@@ -33,17 +34,18 @@ type Server struct {
 	st      *store.Store
 	src     *source.Manager
 	tests   *tester.Manager
+	mirror  *ruleset.Mirror
 	auth    *auth
 	baseURL string // public base URL, e.g. https://conf.example.com (optional)
 	web     fs.FS
 }
 
-func New(st *store.Store, src *source.Manager, tests *tester.Manager, web fs.FS) (*Server, error) {
+func New(st *store.Store, src *source.Manager, tests *tester.Manager, mirror *ruleset.Mirror, web fs.FS) (*Server, error) {
 	a, err := loadAuth(st)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{st: st, src: src, tests: tests, auth: a, baseURL: strings.TrimRight(os.Getenv("CUSCONF_BASE_URL"), "/"), web: web}, nil
+	return &Server{st: st, src: src, tests: tests, mirror: mirror, auth: a, baseURL: strings.TrimRight(os.Getenv("CUSCONF_BASE_URL"), "/"), web: web}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -51,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RealIP, middleware.Recoverer)
 
 	r.Get("/sub/{token}", s.serveSub)
+	r.Get("/s/{code}", s.serveShort)
+	r.Get("/rs/{file}", s.serveRule)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 
 	r.Route("/api", func(r chi.Router) {
@@ -93,6 +97,12 @@ func (s *Server) Handler() http.Handler {
 			r.Put("/tokens/{token}", s.saveToken)
 			r.Delete("/tokens/{token}", s.deleteToken)
 			r.Get("/tokens/{token}/access", s.tokenAccess)
+			r.Post("/tokens/{token}/short", s.createShort)
+			r.Delete("/tokens/{token}/short", s.deleteShort)
+
+			r.Get("/mirror", s.listMirror)
+			r.Post("/mirror/{id}/refresh", s.refreshMirror)
+			r.Delete("/mirror/{id}", s.deleteMirror)
 		})
 	})
 
@@ -363,7 +373,8 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
-	res, err := engine.Generate(engine.Request{Profile: &body.Profile, Nodes: nodes, Target: body.Target, SubscriptionURLs: s.subscriptionURLs(&body.Profile)})
+	res, err := engine.Generate(engine.Request{Profile: &body.Profile, Nodes: nodes, Target: body.Target,
+		SubscriptionURLs: s.subscriptionURLs(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r)})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -425,6 +436,7 @@ func (s *Server) saveToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.Token, in.CreatedAt, in.Uses, in.LastUsedAt, in.LastIP, in.LastUA = t, old.CreatedAt, old.Uses, old.LastUsedAt, old.LastIP, old.LastUA
+		in.Short = old.Short
 	} else {
 		in.Token, in.CreatedAt = store.NewToken(), time.Now().Unix()
 	}
@@ -432,10 +444,12 @@ func (s *Server) saveToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "unknown profile")
 		return
 	}
-	if err := capability.Default.Validate(&capability.Target{Client: in.Target.Client, Platform: in.Target.Platform}); err != nil {
+	norm := capability.Target{Client: in.Target.Client, Platform: in.Target.Platform, Version: in.Target.Version}
+	if err := capability.Default.Validate(&norm); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	in.Target.Platform = norm.Platform // version stays as given: empty follows the latest
 	if in.Name == "" {
 		in.Name = fmt.Sprintf("%s-%s", in.Target.Client, in.Target.Platform)
 	}
@@ -467,6 +481,12 @@ func (s *Server) tokenAccess(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveSub(w http.ResponseWriter, r *http.Request) {
 	tokID := chi.URLParam(r, "token")
+	s.serveToken(w, r, tokID, s.publicBase(r)+"/sub/"+tokID)
+}
+
+// serveToken writes the config of a subscription token; selfURL is the URL the
+// client used (the managed-config / update URL written into the config).
+func (s *Server) serveToken(w http.ResponseWriter, r *http.Request, tokID, selfURL string) {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if ip == "" {
 		ip = r.RemoteAddr
@@ -501,7 +521,7 @@ func (s *Server) serveSub(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := engine.Generate(engine.Request{
 		Profile: p, Nodes: nodes, Target: tok.Target,
-		ManagedURL: s.publicBase(r) + "/sub/" + tokID, SubscriptionURLs: s.subscriptionURLs(p),
+		ManagedURL: selfURL, SubscriptionURLs: s.subscriptionURLs(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r),
 	})
 	if err != nil {
 		fail(http.StatusInternalServerError, err.Error())
@@ -512,10 +532,7 @@ func (s *Server) serveSub(w http.ResponseWriter, r *http.Request) {
 	tok.LastUsedAt, tok.LastIP, tok.LastUA = time.Now().Unix(), ip, r.UserAgent()
 	s.st.PutToken(tok)
 
-	ext := ".conf"
-	if tok.Target.Client == capability.Stash {
-		ext = ".yaml"
-	}
+	ext := capability.Default.Clients[tok.Target.Client].Ext
 	iv := p.General.UpdateInterval
 	if iv <= 0 {
 		iv = 86400
@@ -723,15 +740,16 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.tests.TestOne(ctx, target, tester.Checks{IP: in.IP, Services: in.Services}))
 }
 
-// subscriptionURLs lists the URLs of the enabled URL sources a profile uses.
-func (s *Server) subscriptionURLs(p *profile.Profile) []string {
+// subscriptionURLs lists the URLs of all enabled URL sources. Every one gets a
+// DIRECT rule, not only the profile's: the device may refresh the others too.
+func (s *Server) subscriptionURLs() []string {
 	srcs, err := s.st.ListSources()
 	if err != nil {
 		return nil
 	}
 	var out []string
 	for _, src := range srcs {
-		if src.Kind == "url" && src.Enabled && (len(p.Sources) == 0 || contains(p.Sources, src.ID)) {
+		if src.Kind == "url" && src.Enabled {
 			out = append(out, src.URL)
 		}
 	}

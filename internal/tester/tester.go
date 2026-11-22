@@ -211,18 +211,17 @@ func (r *Result) Probe() *node.Probe {
 	return p
 }
 
-// Test probes one node.
-func Test(ctx context.Context, n *node.Node, s Settings, c Checks) Result {
+// Test probes one node through a mihomo core started with it (see StartCore).
+func Test(ctx context.Context, core *Core, n *node.Node, s Settings, c Checks) Result {
 	s.normalize()
 	r := Result{Key: n.Key(), Name: n.Name, TestedAt: time.Now().Unix()}
 	timeout := time.Duration(s.TimeoutSec) * time.Second
 	r.Warning = interceptWarning(ctx, n.Server)
-	p, err := NewProxy(n)
+	p, err := core.Proxy(n)
 	if err != nil {
 		r.Error = err.Error()
 		return r
 	}
-	defer p.Close()
 
 	// One retry: a single dropped handshake (EOF / reset) is common and not worth flagging a node for.
 	var lat time.Duration
@@ -277,14 +276,14 @@ func queryIP(ctx context.Context, p *Proxy, s Settings, timeout time.Duration) (
 	client := p.Client(timeout, true)
 	defer client.CloseIdleConnections()
 	var reports []IPReport
-	var direct []IPSource
-	// Sources that go through the node run first and tell us the exit IP.
+	var byIP []IPSource
+	// Sources without "{ip}" run first and tell us the exit IP; all go through the node.
 	for _, src := range s.IPSources {
 		if !src.Enabled {
 			continue
 		}
 		if containsIPPlaceholder(src.URL) {
-			direct = append(direct, src)
+			byIP = append(byIP, src)
 			continue
 		}
 		qctx, cancel := context.WithTimeout(ctx, 2*timeout)
@@ -316,9 +315,9 @@ func queryIP(ctx context.Context, p *Proxy, s Settings, timeout time.Duration) (
 	for _, rep := range reports {
 		merge(rep)
 	}
-	for _, src := range direct {
+	for _, src := range byIP {
 		qctx, cancel := context.WithTimeout(ctx, 2*timeout)
-		rep := src.Query(qctx, nil, exit.IP, timeout)
+		rep := src.Query(qctx, client, exit.IP, timeout)
 		cancel()
 		reports = append(reports, rep)
 		merge(rep)
@@ -357,7 +356,7 @@ func interceptWarning(ctx context.Context, host string) string {
 	}
 	for _, a := range addrs {
 		if fakeIPRange.Contains(a.Unmap()) {
-			return "节点服务器被解析为 " + a.String() + "（本机代理软件的 Fake IP），连接会按该软件的规则转发，可能被套进其它代理导致超时或结果不准。请在 Surge / Clash 中让 cusconf 进程或该域名直连。"
+			return "节点服务器被解析为 " + a.String() + "（本机代理软件的 Fake IP），连接会按该软件的规则转发，可能被套进其它代理导致超时或结果不准。请在 Surge / Clash 中让 mihomo 进程（节点测试由它连接节点）或该域名直连。"
 		}
 	}
 	return ""

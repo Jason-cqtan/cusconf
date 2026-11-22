@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, X } from "lucide-react";
 import { cx } from "./ui";
+import { tr } from "../i18n";
 
 export interface Option {
   value: string;
@@ -53,8 +54,8 @@ export function MultiSelect({ options, value, onChange, placeholder, className, 
   const summary = value.length === 0
     ? placeholder
     : value.length <= 2
-      ? value.map((v) => options.find((o) => o.value === v)?.label ?? v).join("、")
-      : `已选 ${value.length} 项`;
+      ? value.map((v) => options.find((o) => o.value === v)?.label ?? v).join(tr("、"))
+      : tr("已选 {0} 项", value.length);
 
   return (
     <div ref={root} className={cx("relative", className)}>
@@ -71,7 +72,7 @@ export function MultiSelect({ options, value, onChange, placeholder, className, 
         {!trigger && value.length > 0 && (
           <span
             role="button"
-            aria-label="清空"
+            aria-label={tr("清空")}
             className="rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             onClick={(e) => { e.stopPropagation(); onChange([]); }}
           >
@@ -86,7 +87,7 @@ export function MultiSelect({ options, value, onChange, placeholder, className, 
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="输入以搜索"
+            placeholder={tr("输入以搜索")}
             className="w-full border-b border-zinc-200 dark:border-zinc-700 bg-transparent px-2.5 py-2 text-sm outline-none"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, shown.length - 1)); }
@@ -96,7 +97,7 @@ export function MultiSelect({ options, value, onChange, placeholder, className, 
             }}
           />
           <div ref={list} className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <div className="px-3 py-2 text-sm text-zinc-500">无匹配项</div>}
+            {shown.length === 0 && <div className="px-3 py-2 text-sm text-zinc-500">{tr("无匹配项")}</div>}
             {shown.map((o, i) => {
               const on = value.includes(o.value);
               return (
@@ -119,8 +120,8 @@ export function MultiSelect({ options, value, onChange, placeholder, className, 
           </div>
           {value.length > 0 && (
             <div className="flex justify-between border-t border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 text-xs">
-              <span className="text-zinc-500">已选 {value.length} 项</span>
-              <button type="button" className="text-indigo-600 hover:underline" onClick={() => onChange([])}>清空</button>
+              <span className="text-zinc-500">{tr("已选")} {value.length} {tr("项")}</span>
+              <button type="button" className="text-indigo-600 hover:underline" onClick={() => onChange([])}>{tr("清空")}</button>
             </div>
           )}
         </div>

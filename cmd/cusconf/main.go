@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cusconf/cusconf/internal/api"
+	"github.com/cusconf/cusconf/internal/ruleset"
 	"github.com/cusconf/cusconf/internal/source"
 	"github.com/cusconf/cusconf/internal/store"
 	"github.com/cusconf/cusconf/internal/tester"
@@ -40,7 +41,8 @@ func main() {
 		fatal("web assets", err)
 	}
 	tests := tester.NewManager(st)
-	srv, err := api.New(st, mgr, tests, dist)
+	mirror := ruleset.NewMirror(st)
+	srv, err := api.New(st, mgr, tests, mirror, dist)
 	if err != nil {
 		fatal("init api", err)
 	}
@@ -49,6 +51,7 @@ func main() {
 	defer stop()
 	go mgr.Run(ctx)
 	go tests.RunSchedule(ctx, st.AllNodes)
+	go mirror.RefreshLoop(ctx)
 
 	hs := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

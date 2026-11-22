@@ -10,13 +10,27 @@
 # downgrade (e.g. smart -> url-test) or drop unsupported nodes / params.
 #
 # Sources: manual.nssurge.com (policies/*, policy-groups/*, rules/ruleset),
-#          stash.wiki (proxy-types, rules/rule-set, release-notes/ios).
+#          stash.wiki (proxy-types, rules/rule-set, release-notes/ios),
+# `latest` values were checked on 2026-11-22 against: the App Store (Surge iOS,
+# Stash, Loon, Quantumult X), the official Sparkle update feeds (Surge Mac:
+# sgupd.com; Stash macOS: releases.stash.ws, stable channel) and GitHub releases
+# (mihomo, FlClash, sing-box). Re-check them there when updating.
+#
+#          wiki.metacubex.one (mihomo), sing-box.sagernet.org (configuration, changelog),
+#          nsloon.app/docs, Quantumult X sample configs (crossutility/Quantumult-X).
+#
+# The entries for Clash Meta / FlClash / sing-box / Loon / Quantumult X were written
+# from memory of those docs; anything not confirmed carries `verified: false`.
 
 clients:
   surge:
+    label: Surge
+    order: 1
+    ext: .conf
+    import: "surge:///install-config?url={url}"
     platforms:
-      ios: {label: "Surge iOS", latest: "6.1.0"}
-      mac: {label: "Surge Mac", latest: "6.13.0"}
+      ios: {label: "Surge iOS", latest: "6.0.1", order: 1}
+      mac: {label: "Surge Mac", latest: "6.12.0", order: 2}
     features:
       proxy.ss: {}
       proxy.ssr: {ios: never, mac: never}
@@ -68,10 +82,14 @@ clients:
       host.rule-set: {mac: "5.10.0", ios: "5.0.0", verified: false}
 
   stash:
-    # Stash version numbers are app versions: iOS/tvOS 3.x, macOS 4.x.
+    label: Stash
+    order: 2
+    ext: .yaml
+    import: "stash://install-config?url={url}"
+    # Stash version numbers are app versions. Before 5.0 iOS/tvOS used 3.x and macOS 4.x; since 5.0 both share one number.
     platforms:
-      ios: {label: "Stash iOS/tvOS", latest: "3.6.0"}
-      mac: {label: "Stash macOS", latest: "4.3.0"}
+      ios: {label: "Stash iOS/tvOS", latest: "5.0.0", order: 1}
+      mac: {label: "Stash macOS", latest: "5.0.0", order: 2}
     features:
       proxy.ss: {}
       proxy.ssr: {}
@@ -120,3 +138,121 @@ clients:
 
       rule.rule-set: {}
       rule.domain-set: {}
+
+  clash-meta:
+    label: Clash Meta (mihomo)
+    order: 3
+    ext: .yaml
+    import: "clash://install-config?url={url}&name={name}"
+    # Versions are mihomo core versions (Clash Verge Rev, Clash Meta for Android, …).
+    platforms:
+      core: {label: "mihomo 内核", latest: "1.19.34", order: 1}
+    features:
+      proxy.anytls: {core: "1.19.3", verified: false}
+      transport.xhttp: {core: "1.19.14", verified: false}
+      vless.encryption: {core: "1.19.13", verified: false}
+      tls.reality-non-vless: {core: never, verified: false}
+      hysteria2.gecko: {core: never, verified: false}
+      group.smart: {core: never}
+      group.category: {core: never}
+
+  flclash:
+    label: FlClash
+    order: 4
+    ext: .yaml
+    import: "clash://install-config?url={url}&name={name}"
+    # FlClash bundles a recent mihomo core; app versions are not mapped to core features.
+    platforms:
+      all: {label: "FlClash", latest: "0.9.4", order: 1}
+    features:
+      tls.reality-non-vless: {all: never, verified: false}
+      hysteria2.gecko: {all: never, verified: false}
+      group.smart: {all: never}
+      group.category: {all: never}
+
+  sing-box:
+    label: sing-box
+    order: 5
+    ext: .json
+    import: "sing-box://import-remote-profile?url={url}#{name}"
+    # The renderer writes the 1.11+ format (rule actions, WireGuard endpoints);
+    # from 1.12 it also uses the new DNS server format.
+    platforms:
+      all: {label: "sing-box", latest: "1.14.4", order: 1}
+    features:
+      min: {all: "1.11.0"}
+      dns.typed-servers: {all: "1.12.0"}
+      proxy.ssr: {all: never}
+      proxy.snell: {all: never}
+      proxy.anytls: {all: "1.12.0"}
+      transport.xhttp: {all: never}
+      vless.encryption: {all: never}
+      hysteria2.gecko: {all: never}
+      ss.v2ray-plugin: {}
+      shadow-tls.v2: {}
+      shadow-tls.v3: {}
+      group.fallback: {all: never}
+      group.load-balance: {all: never}
+      group.smart: {all: never}
+      group.icon: {all: never}
+      group.category: {all: never}
+
+  loon:
+    label: Loon
+    order: 6
+    ext: .conf
+    platforms:
+      ios: {label: "Loon", latest: "3.5.3", order: 1}
+    features:
+      proxy.vless: {verified: false}
+      proxy.hysteria: {ios: never}
+      proxy.hysteria2: {ios: "3.1.0", verified: false}
+      proxy.tuic: {ios: never, verified: false}
+      proxy.tuic-v5: {ios: never, verified: false}
+      proxy.snell: {ios: never, verified: false}
+      proxy.anytls: {ios: "3.3.0", verified: false}
+      transport.httpupgrade: {ios: never, verified: false}
+      transport.grpc: {ios: never, verified: false}
+      transport.h2: {ios: never, verified: false}
+      transport.xhttp: {ios: never}
+      tls.client-fingerprint: {ios: never, verified: false}
+      tls.reality: {ios: "3.2.1", verified: false}
+      tls.reality-non-vless: {ios: never}
+      vless.encryption: {ios: never}
+      ss.v2ray-plugin: {ios: never, verified: false}
+      shadow-tls.v2: {ios: never, verified: false}
+      shadow-tls.v3: {ios: never, verified: false}
+      hysteria2.gecko: {ios: never}
+      group.smart: {ios: never}
+      group.category: {ios: never}
+
+  qx:
+    label: Quantumult X
+    order: 7
+    ext: .conf
+    platforms:
+      ios: {label: "Quantumult X", latest: "1.8.1", order: 1}
+    features:
+      proxy.vless: {ios: "1.5.0", verified: false}
+      proxy.hysteria: {ios: never}
+      proxy.hysteria2: {ios: never, verified: false}
+      proxy.tuic: {ios: never}
+      proxy.tuic-v5: {ios: never}
+      proxy.wireguard: {ios: never}
+      proxy.snell: {ios: never}
+      proxy.anytls: {ios: never}
+      transport.httpupgrade: {ios: never}
+      transport.grpc: {ios: never}
+      transport.h2: {ios: never}
+      transport.http: {ios: never}
+      transport.xhttp: {ios: never}
+      tls.alpn: {ios: never, verified: false}
+      tls.client-fingerprint: {ios: never}
+      tls.reality: {ios: "1.5.0", verified: false}
+      tls.reality-non-vless: {ios: never}
+      vless.encryption: {ios: never}
+      shadow-tls.v2: {ios: never}
+      shadow-tls.v3: {ios: never}
+      group.smart: {ios: never}
+      group.category: {ios: never}
+      group.include-other-group: {}

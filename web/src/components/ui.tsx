@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentProps, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes } from "react";
 import { X, Check, Copy } from "lucide-react";
+import { tr } from "../i18n";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -108,7 +109,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
       <div className={cx("w-full rounded-lg bg-white dark:bg-zinc-900 shadow-xl", wide ? "max-w-4xl" : "max-w-lg")}>
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4 py-3">
           <h2 className="font-semibold">{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="关闭"><X size={16} /></Button>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label={tr("关闭")}><X size={16} /></Button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 px-4 py-3">{footer}</div>}
@@ -141,7 +142,7 @@ export function Chips({ options, value, onChange, render }: { options: { value: 
   );
 }
 
-export function CopyButton({ text, label = "复制" }: { text: string; label?: string }) {
+export function CopyButton({ text, label = tr("复制") }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   const t = useRef<number>(0);
   return (
@@ -154,7 +155,7 @@ export function CopyButton({ text, label = "复制" }: { text: string; label?: s
         t.current = window.setTimeout(() => setDone(false), 1500);
       }}
     >
-      {done ? <Check size={14} /> : <Copy size={14} />} {done ? "已复制" : label}
+      {done ? <Check size={14} /> : <Copy size={14} />} {done ? tr("已复制") : label}
     </Button>
   );
 }

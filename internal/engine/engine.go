@@ -14,7 +14,10 @@ import (
 	"github.com/cusconf/cusconf/internal/node"
 	"github.com/cusconf/cusconf/internal/profile"
 	"github.com/cusconf/cusconf/internal/render"
-	"github.com/cusconf/cusconf/internal/render/stash"
+	"github.com/cusconf/cusconf/internal/render/clash"
+	"github.com/cusconf/cusconf/internal/render/loon"
+	"github.com/cusconf/cusconf/internal/render/qx"
+	"github.com/cusconf/cusconf/internal/render/singbox"
 	"github.com/cusconf/cusconf/internal/render/surge"
 )
 
@@ -23,8 +26,14 @@ type Request struct {
 	Nodes      []*node.Node // all nodes from all sources (Source field set)
 	Target     capability.Target
 	ManagedURL string
-	// SubscriptionURLs of the profile's sources; their hosts get DIRECT rules too.
+	// SubscriptionURLs of all enabled subscription sources; their hosts get DIRECT rules too.
 	SubscriptionURLs []string
+	// Mirror returns this server's rule set mirror URL (see render.Config.Mirror); optional.
+	Mirror func(upstream, behavior, format string) string
+	// MirrorLocal marks mirror URLs that only work on this machine (the server was
+	// reached as localhost and no public base URL is set). Other devices cannot load
+	// them, so rule sets keep their original URLs where the client has one.
+	MirrorLocal bool
 }
 
 // SelectNodes applies the profile's source selection, filter and renames.
@@ -223,29 +232,70 @@ func Generate(req Request) (render.Result, error) {
 	}
 	rules := req.Profile.Rules
 	general := req.Profile.General
+	if req.MirrorLocal && req.Mirror != nil && hasRuleSets(req.Profile) {
+		if general.MirrorRules {
+			general.MirrorRules = false
+			w.Add("general", "规则集镜像", "this page was opened as localhost, so mirror URLs would point to the device itself; original rule set URLs are used instead. Open the admin page via a LAN / public address or set CUSCONF_BASE_URL")
+		}
+		if t.Client == capability.SingBox || t.Client == capability.QX {
+			w.Add("general", "规则集镜像", "this client loads rule sets through the mirror, whose URLs point to localhost here and will not load on other devices; open the admin page via a LAN / public address or set CUSCONF_BASE_URL")
+		}
+	}
+	// Servers of every enabled source, not only the profile's: a device running this
+	// config must still reach the other airports directly (e.g. cusconf's own node
+	// tests, or another app's subscription), or those connections would be proxied.
+	servers := serverNodes(nodes, req.Nodes)
 	if !general.DisableServerDirect {
-		direct := ServerDirectRules(nodes, req.SubscriptionURLs)
+		direct := ServerDirectRules(servers, req.SubscriptionURLs)
 		if h := dohHost(general.ServerDNS); h != "" {
 			direct = append([]profile.Rule{{Type: "DOMAIN", Value: h, Policy: "DIRECT"}}, direct...)
 		}
 		rules = append(direct, rules...)
 	}
-	general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, nodes, req.SubscriptionURLs)...)
+	general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, servers, req.SubscriptionURLs)...)
 	cfg := &render.Config{
 		Target: t, Matrix: mx, Nodes: nodes, Groups: groups,
-		Rules: rules, RuleSets: sets, General: general, ManagedURL: req.ManagedURL,
+		Rules: rules, RuleSets: sets, General: general, ManagedURL: req.ManagedURL, Mirror: req.Mirror,
 	}
 	var res render.Result
 	switch t.Client {
 	case capability.Surge:
 		res = surge.Render(cfg)
-	case capability.Stash:
-		res = stash.Render(cfg)
+	case capability.Stash, capability.ClashMeta, capability.FlClash:
+		res = clash.Render(cfg)
+	case capability.SingBox:
+		res = singbox.Render(cfg)
+	case capability.Loon:
+		res = loon.Render(cfg)
+	case capability.QX:
+		res = qx.Render(cfg)
 	default:
 		return res, fmt.Errorf("no renderer for %s", t.Client)
 	}
 	res.Warnings = append(w, res.Warnings...)
 	return res, nil
+}
+
+func hasRuleSets(p *profile.Profile) bool {
+	for _, r := range p.Rules {
+		if r.Type == "RULE-SET" {
+			return true
+		}
+	}
+	return false
+}
+
+// serverNodes lists the selected nodes followed by the other real nodes of all
+// sources; airport info entries (traffic / expiry) are skipped, since their
+// servers are often placeholders.
+func serverNodes(selected, all []*node.Node) []*node.Node {
+	out := slices.Clone(selected)
+	for _, n := range all {
+		if !node.IsInfo(n) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // applyOrder moves names listed in order to the front, in that order; the rest keep their relative order.
@@ -354,7 +404,10 @@ func ServerDirectRules(nodes []*node.Node, subscriptionURLs []string) []profile.
 		}
 		seen[host] = true
 		if ip, err := netip.ParseAddr(host); err == nil {
-			if ip.Is4() || ip.Is4In6() {
+			if ip = ip.Unmap(); ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+				return // local addresses are DIRECT anyway; placeholders must not become rules
+			}
+			if ip.Is4() {
 				ips = append(ips, profile.Rule{Type: "IP-CIDR", Value: ip.Unmap().String() + "/32", Policy: "DIRECT", NoResolve: true})
 			} else {
 				ips = append(ips, profile.Rule{Type: "IP-CIDR6", Value: ip.String() + "/128", Policy: "DIRECT", NoResolve: true})

@@ -51,17 +51,30 @@ func TestIPSourceQuery(t *testing.T) {
 	}
 }
 
-// Every protocol the parser understands must convert to a mihomo outbound.
+// Every protocol the parser understands must be accepted by mihomo.
+// Needs the mihomo executable (CUSCONF_MIHOMO or PATH); skipped without it.
 func TestToMihomoParses(t *testing.T) {
+	if _, err := MihomoPath(); err != nil {
+		t.Skip(err)
+	}
+	var nodes []*node.Node
 	for _, f := range []string{"../parser/testdata/uri.txt", "../parser/testdata/clash.yaml", "../parser/testdata/surge.conf"} {
 		b, _ := readFile(f)
 		for _, n := range parser.Parse(b).Nodes {
 			if (n.Type == node.WireGuard && n.WireGuard.PrivateKey == "priv") || (n.TLS.Reality() && len(n.TLS.RealityPubKey) < 40) {
 				continue // fixture keys are placeholders, not real keys
 			}
-			if _, err := NewProxy(n); err != nil {
-				t.Errorf("%s %s (%s): %v", f, n.Name, n.Type, err)
-			}
+			nodes = append(nodes, n)
+		}
+	}
+	core, err := StartCore(context.Background(), nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer core.Close()
+	for _, n := range nodes {
+		if _, err := core.Proxy(n); err != nil {
+			t.Errorf("%s (%s): %v", n.Name, n.Type, err)
 		}
 	}
 }
@@ -205,5 +218,26 @@ func TestBuiltinDirectionFixed(t *testing.T) {
 	s.normalize()
 	if !s.IPSources[0].HigherIsSafer || s.IPSources[1].HigherIsSafer || !s.IPSources[2].HigherIsSafer {
 		t.Errorf("%+v", s.IPSources[:3])
+	}
+}
+
+// A node mihomo rejects reports its own error; the others still load.
+func TestCoreDropsBadNode(t *testing.T) {
+	if _, err := MihomoPath(); err != nil {
+		t.Skip(err)
+	}
+	good := &node.Node{Name: "good", Type: node.SS, Server: "1.2.3.4", Port: 8388, Cipher: "aes-128-gcm", Password: "x"}
+	bad := &node.Node{Name: "bad", Type: node.VLESS, Server: "1.2.3.4", Port: 443, UUID: "b831b1f8-5a5e-4b57-a03e-1234567890ab",
+		TLS: &node.TLS{Enabled: true, SNI: "a.com", RealityPubKey: "not-a-key"}}
+	core, err := StartCore(context.Background(), []*node.Node{bad, good})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer core.Close()
+	if _, err := core.Proxy(bad); err == nil || !strings.Contains(err.Error(), "REALITY") {
+		t.Errorf("bad node: %v", err)
+	}
+	if _, err := core.Proxy(good); err != nil {
+		t.Errorf("good node: %v", err)
 	}
 }

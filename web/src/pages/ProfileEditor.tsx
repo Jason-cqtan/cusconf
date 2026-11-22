@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 import { api, type Capabilities, type Group, type Node, type Profile, type Rule, type Source, type Warning } from "../api";
-import { Button, Chips, ErrorText, Field, Input, StickyBar, Toggle, cx } from "../components/ui";
+import { Button, Chips, ErrorText, Field, Input, StickyBar, Textarea, Toggle, cx } from "../components/ui";
 import GroupsEditor from "./GroupsEditor";
 import RulesEditor from "./RulesEditor";
 import PreviewPanel from "./PreviewPanel";
 import { FilterEditor } from "./FilterEditor";
 import { HostsEditor } from "./HostsEditor";
 import { ExtraConfigEditor } from "./ExtraConfigEditor";
+import { tr } from "../i18n";
 
 export type EditableGroup = Group & { _uid?: string };
 export type EditableRule = Rule & { _uid?: string };
@@ -26,11 +27,11 @@ let uidSeq = 0;
 export const uid = () => `u${++uidSeq}`;
 
 const tabs = [
-  { id: "groups", label: "策略组" },
-  { id: "rules", label: "规则" },
-  { id: "nodes", label: "节点范围" },
-  { id: "general", label: "通用" },
-  { id: "preview", label: "生成预览" },
+  { id: "groups", label: tr("策略组") },
+  { id: "rules", label: tr("规则") },
+  { id: "nodes", label: tr("节点范围") },
+  { id: "general", label: tr("通用") },
+  { id: "preview", label: tr("生成预览") },
 ] as const;
 type Tab = (typeof tabs)[number]["id"];
 
@@ -106,11 +107,11 @@ export default function ProfileEditor({ id, onBack, onSaved }: { id: string; onB
     <div className="space-y-4" style={{ "--sticky-h": `${barH}px` } as CSSProperties}>
       <StickyBar barRef={setBar} className="border-b border-zinc-200 dark:border-zinc-800">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => (!dirty || confirm("有未保存的修改，确定离开？")) && onBack()}><ArrowLeft size={16} /></Button>
-        <Input className="max-w-xs font-medium" value={p.name} onChange={(e) => update((o) => ({ ...o, name: e.target.value }))} placeholder="配置名称" />
-        <span className="text-xs text-zinc-500"><NodeCount count={ctx.nodes.length} /> · {p.groups.length} 个策略组</span>
+        <Button variant="ghost" size="sm" onClick={() => (!dirty || confirm(tr("有未保存的修改，确定离开？"))) && onBack()}><ArrowLeft size={16} /></Button>
+        <Input className="max-w-xs font-medium" value={p.name} onChange={(e) => update((o) => ({ ...o, name: e.target.value }))} placeholder={tr("配置名称")} />
+        <span className="text-xs text-zinc-500"><NodeCount count={ctx.nodes.length} /> · {p.groups.length} {tr("个策略组")}</span>
         <Button variant="primary" className="ml-auto" disabled={saving || !p.name} onClick={save}>
-          <Save size={16} /> {saving ? "保存中…" : dirty ? "保存" : "已保存"}
+          <Save size={16} /> {saving ? tr("保存中…") : dirty ? tr("保存") : tr("已保存")}
         </Button>
       </div>
       {err && <div className="mt-3"><ErrorText error={err} /></div>}
@@ -130,7 +131,7 @@ export default function ProfileEditor({ id, onBack, onSaved }: { id: string; onB
 
       {resolveWarnings.length > 0 && tab === "groups" && (
         <ul className="rounded-md bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          {resolveWarnings.map((w, i) => <li key={i}>{w.name}：{w.message}</li>)}
+          {resolveWarnings.map((w, i) => <li key={i}>{w.name}{tr("：")}{w.message}</li>)}
         </ul>
       )}
 
@@ -160,12 +161,12 @@ function NodeScope({ profile: p, update, ctx }: { profile: EditableProfile; upda
   const setRename = (r: typeof renames) => update((o) => ({ ...o, rename: r }));
   return (
     <div className="grid items-start gap-6 xl:grid-cols-2">
-      <Field label="订阅源" hint="不选表示使用全部启用的订阅源">
+      <Field label={tr("订阅源")} hint={tr("不选表示使用全部启用的订阅源")}>
         <Chips options={ctx.sources.map((s) => ({ value: s.id, label: `${s.name} (${s.nodeCount})` }))} value={sel} onChange={(v) => update((o) => ({ ...o, sources: v }))} />
       </Field>
       <RenameEditor renames={renames} setRename={setRename} />
       <div className="xl:col-span-2">
-        <div className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">全局节点过滤（先于策略组生效）</div>
+        <div className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("全局节点过滤（先于策略组生效）")}</div>
         <FilterEditor filter={p.filter} onChange={(f) => update((o) => ({ ...o, filter: f }))} ctx={{ ...ctx, nodes: ctx.scopeNodes }} showNames={false} />
       </div>
     </div>
@@ -175,15 +176,15 @@ function NodeScope({ profile: p, update, ctx }: { profile: EditableProfile; upda
 function RenameEditor({ renames, setRename }: { renames: { pattern: string; replace: string }[]; setRename: (r: { pattern: string; replace: string }[]) => void }) {
   return (
     <div className="space-y-2">
-      <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">节点重命名（正则替换，按顺序执行）</div>
+      <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("节点重命名（正则替换，按顺序执行）")}</div>
       {renames.map((r, i) => (
         <div key={i} className="flex gap-2">
-          <Input className="font-mono text-xs" placeholder="正则，如 ^\[.*?\]\s*" value={r.pattern} onChange={(e) => setRename(renames.map((x, j) => (j === i ? { ...x, pattern: e.target.value } : x)))} />
-          <Input className="font-mono text-xs" placeholder="替换为" value={r.replace} onChange={(e) => setRename(renames.map((x, j) => (j === i ? { ...x, replace: e.target.value } : x)))} />
-          <Button variant="danger" size="sm" className="h-9" onClick={() => setRename(renames.filter((_, j) => j !== i))}>删除</Button>
+          <Input className="font-mono text-xs" placeholder={tr("正则，如 ^\\[.*?\\]\\s*")} value={r.pattern} onChange={(e) => setRename(renames.map((x, j) => (j === i ? { ...x, pattern: e.target.value } : x)))} />
+          <Input className="font-mono text-xs" placeholder={tr("替换为")} value={r.replace} onChange={(e) => setRename(renames.map((x, j) => (j === i ? { ...x, replace: e.target.value } : x)))} />
+          <Button variant="danger" size="sm" className="h-9" onClick={() => setRename(renames.filter((_, j) => j !== i))}>{tr("删除")}</Button>
         </div>
       ))}
-      <Button size="sm" onClick={() => setRename([...renames, { pattern: "", replace: "" }])}>添加重命名规则</Button>
+      <Button size="sm" onClick={() => setRename([...renames, { pattern: "", replace: "" }])}>{tr("添加重命名规则")}</Button>
     </div>
   );
 }
@@ -211,7 +212,7 @@ function NodeCount({ count }: { count: number }) {
   }, [pulse]);
   return (
     <span key={pulse?.key} className={cx("rounded px-1 py-0.5", pulse && "count-pulse font-medium text-zinc-900 dark:text-zinc-100")}>
-      {count} 个节点
+      {count} {tr("个节点")}
       {pulse && <span className={cx("ml-1", pulse.delta > 0 ? "text-emerald-600" : "text-red-600")}>{pulse.delta > 0 ? `+${pulse.delta}` : pulse.delta}</span>}
     </span>
   );
@@ -226,20 +227,19 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
   return (
     <div className="space-y-8">
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Field label="DNS 服务器" hint="逗号分隔；Surge 可用 system"><Input value={list(g.dns)} onChange={(e) => set({ dns: parse(e.target.value) })} placeholder="system, 223.5.5.5, 119.29.29.29" /></Field>
-      <Field label="代理测速 URL"><Input value={g.testUrl ?? ""} onChange={(e) => set({ testUrl: e.target.value })} placeholder="https://cp.cloudflare.com/generate_204" /></Field>
-      <Field label="直连测速 URL（Surge）"><Input value={g.internetTestUrl ?? ""} onChange={(e) => set({ internetTestUrl: e.target.value })} placeholder="http://www.apple.com/library/test/success.html" /></Field>
-      <Field label="配置自动更新间隔（秒）"><Input type="number" value={g.updateInterval ?? ""} onChange={(e) => set({ updateInterval: +e.target.value || undefined })} placeholder="86400" /></Field>
-      <Field label="跳过代理" className="sm:col-span-2 xl:col-span-4"><Input value={list(g.skipProxy)} onChange={(e) => set({ skipProxy: parse(e.target.value) })} placeholder="留空使用默认局域网地址" /></Field>
-      <div className="sm:col-span-2"><Toggle checked={!!g.ipv6} onChange={(v) => set({ ipv6: v })} label="启用 IPv6" /></div>
+      <Field label={tr("DNS 服务器")} hint={tr("逗号分隔；Surge 可用 system")}><Input value={list(g.dns)} onChange={(e) => set({ dns: parse(e.target.value) })} placeholder="system, 223.5.5.5, 119.29.29.29" /></Field>
+      <Field label={tr("代理测速 URL")}><Input value={g.testUrl ?? ""} onChange={(e) => set({ testUrl: e.target.value })} placeholder="https://cp.cloudflare.com/generate_204" /></Field>
+      <Field label={tr("直连测速 URL（Surge）")}><Input value={g.internetTestUrl ?? ""} onChange={(e) => set({ internetTestUrl: e.target.value })} placeholder="http://www.apple.com/library/test/success.html" /></Field>
+      <Field label={tr("配置自动更新间隔（秒）")}><Input type="number" value={g.updateInterval ?? ""} onChange={(e) => set({ updateInterval: +e.target.value || undefined })} placeholder="86400" /></Field>
+      <Field label={tr("跳过代理")} className="sm:col-span-2 xl:col-span-4"><Input value={list(g.skipProxy)} onChange={(e) => set({ skipProxy: parse(e.target.value) })} placeholder={tr("留空使用默认局域网地址")} /></Field>
+      <div className="sm:col-span-2"><Toggle checked={!!g.ipv6} onChange={(v) => set({ ipv6: v })} label={tr("启用 IPv6")} /></div>
       <div className="sm:col-span-2 space-y-1">
-        <Toggle checked={!g.disableServerDirect} onChange={(v) => set({ disableServerDirect: !v || undefined })} label="节点服务器与订阅地址直连（推荐）" />
-        <p className="text-xs text-zinc-500">在所有规则最前面，为每个节点的服务器地址和订阅链接的域名加上 DIRECT 规则，避免这些连接被规则转进其它代理（代理套代理会导致超时，订阅也可能更新失败）。</p>
+        <Toggle checked={!g.disableServerDirect} onChange={(v) => set({ disableServerDirect: !v || undefined })} label={tr("节点服务器与订阅地址直连（推荐）")} />
+        <p className="text-xs text-zinc-500">{tr("在所有规则最前面，为所有启用订阅源（不只是本配置用到的）的节点服务器地址和订阅链接域名加上 DIRECT 规则，避免这些连接被规则转进其它代理（代理套代理会导致超时，订阅也可能更新失败；本机运行 cusconf 测试其它机场节点时同样需要）。机场信息节点和局域网地址不会生成规则。")}</p>
       </div>
       <div className="sm:col-span-2 xl:col-span-4">
-        <Field label="节点与订阅域名的解析 DNS" hint={<>
-          生成配置时，为每个节点服务器和订阅地址的域名自动写入 [Host]：<code>域名 = server:此地址</code>，并在规则最前面让这个 DNS 本身直连。
-          使用经代理的加密 DNS（如 <code>encrypted-dns-follow-outbound-mode</code>）时可避免「解析节点需要先连节点」的死循环，换机场也无需手动维护。留空则不生成；Host 中已手动映射的域名不会被覆盖。
+        <Field label={tr("节点与订阅域名的解析 DNS")} hint={<>
+          {tr("生成配置时，为每个节点服务器和订阅地址的域名自动写入 [Host]：")}<code>{tr("域名 = server:此地址")}</code>{tr("，并在规则最前面让这个 DNS 本身直连。 使用经代理的加密 DNS（如")} <code>encrypted-dns-follow-outbound-mode</code>{tr("）时可避免「解析节点需要先连节点」的死循环，换机场也无需手动维护。留空则不生成；Host 中已手动映射的域名不会被覆盖。")}
         </>}>
           <Input className="font-mono text-xs" value={g.serverDns ?? ""} onChange={(e) => set({ serverDns: e.target.value.trim() || undefined })} placeholder="https://dns.alidns.com/dns-query" />
         </Field>
@@ -248,20 +248,48 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
     </div>
     <ExtraConfigEditor
       client="surge"
-      label="Surge [General] 追加内容"
-      hint="每行 key = value。与上方生成的同名项会覆盖生成值，其余追加到 [General] 末尾。点击右侧可配置项快速插入。"
+      label={tr("Surge [General] 追加内容")}
+      hint={tr("每行 key = value。与上方生成的同名项会覆盖生成值，其余追加到 [General] 末尾。点击右侧可配置项快速插入。")}
       value={extra.surge ?? ""}
       onChange={(v) => set({ extra: { ...extra, surge: v } })}
-      placeholder={"例如：\nshow-error-page-for-reject = true"}
+      placeholder={tr("例如：\nshow-error-page-for-reject = true")}
     />
     <ExtraConfigEditor
       client="stash"
-      label="Stash 追加 YAML"
-      hint="顶层 YAML，会合并进生成的配置：映射按键合并（如 dns 下的字段），其它值覆盖或新增。YAML 有误时忽略并在预览中提示。"
+      label={tr("Stash 追加 YAML")}
+      hint={tr("顶层 YAML，会合并进生成的配置：映射按键合并（如 dns 下的字段），其它值覆盖或新增。YAML 有误时忽略并在预览中提示。")}
       value={extra.stash ?? ""}
       onChange={(v) => set({ extra: { ...extra, stash: v } })}
-      placeholder={"例如：\ndns:\n  fake-ip-filter:\n    - '*.lan'"}
+      placeholder={tr("例如：\ndns:\n  fake-ip-filter:\n    - '*.lan'")}
     />
+    <OtherExtra extra={extra} onChange={(e) => set({ extra: e })} />
+    </div>
+  );
+}
+
+const otherExtras = [
+  { key: "mihomo", label: tr("Clash Meta / FlClash 追加 YAML"), hint: tr("顶层 YAML，合并规则同 Stash：映射按键合并，其它值覆盖或新增。"), placeholder: tr("例如：\nsniffer:\n  enable: true\ntun:\n  enable: true\n  stack: mixed") },
+  { key: "sing-box", label: tr("sing-box 追加 JSON"), hint: tr("一个 JSON 对象，合并进生成的配置：对象按键合并，数组和其它值整体覆盖。"), placeholder: tr("例如：\n{\"log\": {\"level\": \"warn\"}, \"experimental\": {\"clash_api\": {\"external_ui\": \"ui\"}}}") },
+  { key: "loon", label: tr("Loon [General] 追加内容"), hint: tr("每行 key = value；与生成的同名项会覆盖生成值，其余追加到 [General] 末尾。"), placeholder: tr("例如：\nipv6-vif = auto") },
+  { key: "qx", label: tr("Quantumult X [general] 追加内容"), hint: tr("每行 key=value；与生成的同名项会覆盖生成值，其余追加到 [general] 末尾。"), placeholder: tr("例如：\nprofile_img_url=https://…") },
+];
+
+/** Raw extra config for the clients without an option list, one at a time. */
+function OtherExtra({ extra, onChange }: { extra: Record<string, string>; onChange: (e: Record<string, string>) => void }) {
+  const [key, setKey] = useState(otherExtras.find((o) => extra[o.key])?.key ?? otherExtras[0].key);
+  const o = otherExtras.find((x) => x.key === key)!;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {otherExtras.map((x) => (
+          <Button key={x.key} size="sm" variant={x.key === key ? "primary" : "secondary"} onClick={() => setKey(x.key)}>
+            {x.label.split(/ 追加| extra/)[0]}{extra[x.key]?.trim() ? " •" : ""}
+          </Button>
+        ))}
+      </div>
+      <Field label={o.label} hint={o.hint}>
+        <Textarea rows={8} className="font-mono text-xs" value={extra[o.key] ?? ""} placeholder={o.placeholder} onChange={(e) => onChange({ ...extra, [o.key]: e.target.value })} />
+      </Field>
     </div>
   );
 }

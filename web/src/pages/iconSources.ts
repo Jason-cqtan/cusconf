@@ -1,3 +1,4 @@
+import { tr } from "../i18n";
 /** Where the icon picker gets its icons. Lists are fetched in the browser and cached. */
 export interface IconSource {
   id: string;
@@ -24,7 +25,7 @@ async function gallery(url: string): Promise<Icon[]> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const d = await r.json();
-  if (!Array.isArray(d?.icons)) throw new Error("不是图标订阅 JSON（缺少 icons 数组）");
+  if (!Array.isArray(d?.icons)) throw new Error(tr("不是图标订阅 JSON（缺少 icons 数组）"));
   return d.icons
     .filter((i: Icon) => typeof i?.url === "string" && i.url)
     .map((i: Icon) => ({ name: String(i.name ?? "").replace(/\.png$/i, ""), url: i.url }));
@@ -49,10 +50,10 @@ async function lobehub(): Promise<Icon[]> {
 }
 
 export const builtinIconSources: IconSource[] = [
-  { id: "common", name: "常用", home: "https://github.com/Koolson/Qure", load: async () => commonNames.map((n) => ({ name: n, url: `${QURE}${n}.png` })) },
-  { id: "qure", name: "Qure 全部", home: "https://github.com/Koolson/Qure", load: () => gallery("https://raw.githubusercontent.com/Koolson/Qure/master/Other/QureColor.json") },
-  { id: "lobehub", name: "AI 品牌（LobeHub）", home: "https://github.com/lobehub/lobe-icons", load: lobehub },
-  { id: "semporia", name: "手绘（Semporia）", home: "https://github.com/Semporia/Hand-Painted-icon", load: () => gallery("https://raw.githubusercontent.com/Semporia/Hand-Painted-icon/master/Semporia.json") },
+  { id: "common", name: tr("常用"), home: "https://github.com/Koolson/Qure", load: async () => commonNames.map((n) => ({ name: n, url: `${QURE}${n}.png` })) },
+  { id: "qure", name: tr("Qure 全部"), home: "https://github.com/Koolson/Qure", load: () => gallery("https://raw.githubusercontent.com/Koolson/Qure/master/Other/QureColor.json") },
+  { id: "lobehub", name: tr("AI 品牌（LobeHub）"), home: "https://github.com/lobehub/lobe-icons", load: lobehub },
+  { id: "semporia", name: tr("手绘（Semporia）"), home: "https://github.com/Semporia/Hand-Painted-icon", load: () => gallery("https://raw.githubusercontent.com/Semporia/Hand-Painted-icon/master/Semporia.json") },
   { id: "mini", name: "mini（Orz-3）", home: "https://github.com/Orz-3/mini", load: () => gallery("https://raw.githubusercontent.com/Orz-3/mini/master/mini.json") },
 ];
 

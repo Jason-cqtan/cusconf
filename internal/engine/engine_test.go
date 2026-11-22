@@ -566,3 +566,92 @@ func TestDefaultGeneral(t *testing.T) {
 		t.Error("stash test url")
 	}
 }
+
+func TestServerDirectAllSources(t *testing.T) {
+	p := profile.Default(nil, 0)
+	p.Sources = []string{"mine"}
+	nodes := []*node.Node{
+		{Name: "A", Type: node.SS, Server: "a.example.com", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "mine"},
+		{Name: "B", Type: node.SS, Server: "b.other.com", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
+		{Name: "流量：1G / 2G", Type: node.SS, Server: "1.1.1.1", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
+		{Name: "LAN", Type: node.SS, Server: "192.168.1.2", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
+	}
+	res, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Content, "B = ss") {
+		t.Error("node of another source must not be emitted")
+	}
+	for _, want := range []string{"DOMAIN,a.example.com,DIRECT", "DOMAIN,b.other.com,DIRECT"} {
+		if !strings.Contains(res.Content, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	for _, bad := range []string{"1.1.1.1/32", "192.168.1.2/32"} {
+		if strings.Contains(res.Content, bad) {
+			t.Errorf("unexpected DIRECT rule for %s", bad)
+		}
+	}
+}
+
+func TestDefaultDoHRules(t *testing.T) {
+	withHK := profile.Default(map[string]int{"HK": 3, "JP": 2}, 0)
+	noHK := profile.Default(map[string]int{"JP": 2}, 0)
+	for _, c := range []struct {
+		p    profile.Profile
+		want string
+	}{{withHK, node.RegionName("HK")}, {noHK, profile.GlobalGroup}} {
+		if err := c.p.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for _, r := range c.p.Rules {
+			if r.Type == "DOMAIN" {
+				got[r.Value] = r.Policy
+			}
+		}
+		if got["cloudflare-dns.com"] != c.want || got["dns.google"] != c.want {
+			t.Errorf("want %s, got %v", c.want, got)
+		}
+	}
+	sg, err := Generate(Request{Profile: &withHK, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sg.Content, "# 指向自动切换的稳定组\nDOMAIN,cloudflare-dns.com,香港\nDOMAIN,dns.google,香港\n") {
+		t.Error("DoH rules missing from Surge output")
+	}
+}
+
+func TestDefaultRuleSets(t *testing.T) {
+	policyOf := func(p profile.Profile) map[string]string {
+		m := map[string]string{}
+		for _, r := range p.Rules {
+			if r.Type == "RULE-SET" {
+				m[r.Value] = r.Policy
+			}
+		}
+		return m
+	}
+	p := profile.Default(map[string]int{"HK": 3, "JP": 2, "US": 1}, 0)
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	got := policyOf(p)
+	want := map[string]string{
+		"BanAD": "REJECT", "BanProgramAD": "REJECT", "Apple": "DIRECT", "AI": node.RegionName("US"),
+		"Twitter": profile.GlobalGroup, "ChinaIp": "DIRECT", "Download": "DIRECT",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
+	}
+	if ai := policyOf(profile.Default(map[string]int{"HK": 3, "JP": 2}, 0))["AI"]; ai != node.RegionName("JP") {
+		t.Errorf("AI without US nodes: %s", ai)
+	}
+	if ai := policyOf(profile.Default(map[string]int{"HK": 3}, 0))["AI"]; ai != profile.GlobalGroup {
+		t.Errorf("AI with only HK nodes: %s", ai)
+	}
+}

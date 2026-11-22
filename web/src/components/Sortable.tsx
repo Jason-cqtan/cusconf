@@ -3,6 +3,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
+import { tr } from "../i18n";
 
 /** Vertical drag-to-reorder list. `ids` must be unique and stable per item. */
 export function SortableList<T>({ items, ids, onReorder, render }: {
@@ -35,7 +36,7 @@ export function SortableList<T>({ items, ids, onReorder, render }: {
 function SortableRow({ id, children }: { id: string; children: (handle: ReactNode) => ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const handle = (
-    <span {...attributes} {...listeners} className="cursor-grab touch-none text-zinc-400 hover:text-zinc-600" aria-label="拖动排序">
+    <span {...attributes} {...listeners} className="cursor-grab touch-none text-zinc-400 hover:text-zinc-600" aria-label={tr("拖动排序")}>
       <GripVertical size={16} />
     </span>
   );

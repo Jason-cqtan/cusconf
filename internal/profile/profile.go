@@ -159,7 +159,10 @@ type RuleSet struct {
 	SurgeURL    string `json:"surgeUrl,omitempty"`
 	StashURL    string `json:"stashUrl,omitempty"`
 	StashFormat string `json:"stashFormat,omitempty"` // yaml | text
-	Interval    int    `json:"interval,omitempty"`    // seconds
+	// SingboxURL is an optional sing-box rule set (.srs binary or .json source). Without
+	// it sing-box loads the Surge / Stash list through this server's mirror, converted.
+	SingboxURL string `json:"singboxUrl,omitempty"`
+	Interval   int    `json:"interval,omitempty"` // seconds
 }
 
 type General struct {
@@ -174,6 +177,10 @@ type General struct {
 	// DisableServerDirect turns off the DIRECT rules added in front of all rules for
 	// node servers and subscription hosts (on by default).
 	DisableServerDirect bool `json:"disableServerDirect,omitempty"`
+	// MirrorRules serves every rule set through this server's mirror (cached copies,
+	// converted per client), so clients do not need to reach the original hosts.
+	// sing-box and Quantumult X use the mirror for converted lists either way.
+	MirrorRules bool `json:"mirrorRules,omitempty"`
 	// ServerDNS, when set (e.g. a domestic DoH URL), resolves every node server and
 	// subscription domain with it via generated [Host] entries, and its own host gets a
 	// DIRECT rule. This keeps "DoH over the proxy needs a node, which needs DNS" from looping.

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Rule, RuleSet } from "../api";
 import { Badge, Button, Field, Modal, Select, Textarea, Toggle } from "../components/ui";
+import { tr } from "../i18n";
 
 /** Rule types the editor offers. Imported lines may use any of them. */
 export const ruleTypes = [
@@ -52,16 +53,16 @@ export function parseRules(text: string): ParseResult {
     let type = parts[0].toUpperCase();
     type = aliases[type] ?? type;
     if (!ruleTypes.includes(type)) {
-      errors.push({ line, text: raw.trim(), reason: `不支持的规则类型 ${parts[0]}` });
+      errors.push({ line, text: raw.trim(), reason: tr("不支持的规则类型 {0}", parts[0]) });
       return;
     }
     if (type === "FINAL") {
-      if (!parts[1]) return void errors.push({ line, text: raw.trim(), reason: "缺少策略" });
+      if (!parts[1]) return void errors.push({ line, text: raw.trim(), reason: tr("缺少策略") });
       push({ line, rule: { type, value: "", policy: parts[1] } });
       return;
     }
     if (parts.length < 3 || !parts[1] || !parts[2]) {
-      errors.push({ line, text: raw.trim(), reason: "格式应为 类型,值,策略" });
+      errors.push({ line, text: raw.trim(), reason: tr("格式应为 类型,值,策略") });
       return;
     }
     const opts = parts.slice(3).map((o) => o.toLowerCase());
@@ -121,9 +122,9 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
     for (const it of parsed.items) {
       const r = { ...it.rule, policy: policyFor(it.rule.policy) };
       if (r.type === "FINAL") {
-        if (existing.some((x) => x.type === "FINAL")) { skipped.push(`第 ${it.line} 行：已有 FINAL 规则`); continue; }
+        if (existing.some((x) => x.type === "FINAL")) { skipped.push(tr("第 {0} 行：已有 FINAL 规则", it.line)); continue; }
       } else if (r.type === "RULE-SET" && !it.newSet && !taken.has(r.value)) {
-        skipped.push(`第 ${it.line} 行：规则集「${r.value}」不存在`);
+        skipped.push(tr("第 {0} 行：规则集「{1}」不存在", it.line, r.value));
         continue;
       }
       if (it.newSet) {
@@ -132,7 +133,7 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
         if (!taken.has(name)) { newSets.push({ ...it.newSet, name }); taken.add(name); }
         r.value = name;
       }
-      if (skipDup && seen.has(key(r))) { skipped.push(`第 ${it.line} 行：重复的 ${r.type},${r.value}`); continue; }
+      if (skipDup && seen.has(key(r))) { skipped.push(tr("第 {0} 行：重复的 {1},{2}", it.line, r.type, r.value)); continue; }
       seen.add(key(r));
       rules.push(r);
     }
@@ -146,31 +147,31 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
     <Modal
       open={open}
       onClose={close}
-      title="批量导入规则"
+      title={tr("批量导入规则")}
       wide
       footer={
         <>
-          <Button onClick={close}>取消</Button>
+          <Button onClick={close}>{tr("取消")}</Button>
           <Button variant="primary" disabled={!result.rules.length} onClick={() => { onImport(result.rules, result.newSets, position); close(); }}>
-            导入 {result.rules.length || ""} 条
+            {tr("导入")} {result.rules.length || ""} {tr("条")}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Field label="粘贴规则" hint="每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]。# 开头的注释行会作为下一条规则的备注保留，并写入生成的配置。">
+        <Field label={tr("粘贴规则")} hint={tr("每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]。# 开头的注释行会作为下一条规则的备注保留，并写入生成的配置。")}>
           <Textarea
             rows={8}
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={"DOMAIN,code.example.com,DIRECT\nDOMAIN-SUFFIX,example.com,节点选择\nIP-CIDR,10.0.0.0/8,DIRECT,no-resolve\nRULE-SET,https://example.com/rules.list,节点选择"}
+            placeholder={tr("DOMAIN,code.example.com,DIRECT\nDOMAIN-SUFFIX,example.com,节点选择\nIP-CIDR,10.0.0.0/8,DIRECT,no-resolve\nRULE-SET,https://example.com/rules.list,节点选择")}
           />
         </Field>
 
         {unknown.length > 0 && (
           <div className="space-y-2 rounded-md bg-amber-50 dark:bg-amber-950/40 p-3">
-            <p className="text-xs text-amber-900 dark:text-amber-200">以下策略在当前配置中不存在，请选择对应的策略（之后也可以在规则列表里修改）：</p>
+            <p className="text-xs text-amber-900 dark:text-amber-200">{tr("以下策略在当前配置中不存在，请选择对应的策略（之后也可以在规则列表里修改）：")}</p>
             {unknown.map((u) => (
               <div key={u} className="flex items-center gap-2 text-sm">
                 <code className="min-w-32 rounded bg-white/60 dark:bg-black/30 px-1.5 py-0.5 text-xs">{u}</code>
@@ -186,16 +187,16 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
         {text.trim() && (
           <div className="space-y-2 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge color="green">可导入 {result.rules.length}</Badge>
-              {result.newSets.length > 0 && <Badge color="indigo">新建规则集 {result.newSets.length}</Badge>}
-              {result.skipped.length > 0 && <Badge color="amber">跳过 {result.skipped.length}</Badge>}
-              {parsed.errors.length > 0 && <Badge color="red">无法识别 {parsed.errors.length}</Badge>}
+              <Badge color="green">{tr("可导入")} {result.rules.length}</Badge>
+              {result.newSets.length > 0 && <Badge color="indigo">{tr("新建规则集")} {result.newSets.length}</Badge>}
+              {result.skipped.length > 0 && <Badge color="amber">{tr("跳过")} {result.skipped.length}</Badge>}
+              {parsed.errors.length > 0 && <Badge color="red">{tr("无法识别")} {parsed.errors.length}</Badge>}
               <span className="ml-auto flex items-center gap-4">
-                <Select className="h-8 w-auto text-xs" value={position} onChange={(e) => setPosition(e.target.value as "top" | "beforeFinal")} title="规则从上到下匹配，自定义规则通常放在最前面，避免被前面的规则集先匹配">
-                  <option value="top">插入到最前面</option>
-                  <option value="beforeFinal">插入到 FINAL 之前</option>
+                <Select className="h-8 w-auto text-xs" value={position} onChange={(e) => setPosition(e.target.value as "top" | "beforeFinal")} title={tr("规则从上到下匹配，自定义规则通常放在最前面，避免被前面的规则集先匹配")}>
+                  <option value="top">{tr("插入到最前面")}</option>
+                  <option value="beforeFinal">{tr("插入到 FINAL 之前")}</option>
                 </Select>
-                <Toggle checked={skipDup} onChange={setSkipDup} label="跳过重复规则" />
+                <Toggle checked={skipDup} onChange={setSkipDup} label={tr("跳过重复规则")} />
               </span>
             </div>
             {result.rules.length > 0 && (
@@ -209,10 +210,10 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
                 ))}
               </div>
             )}
-            {[...result.skipped, ...parsed.errors.map((e) => `第 ${e.line} 行：${e.reason}（${e.text}）`)].length > 0 && (
+            {[...result.skipped, ...parsed.errors.map((e) => tr("第 {0} 行：{1}（{2}）", e.line, e.reason, e.text))].length > 0 && (
               <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-500">
                 {result.skipped.map((s, i) => <li key={`s${i}`}>{s}</li>)}
-                {parsed.errors.map((e, i) => <li key={`e${i}`} className="text-red-600">第 {e.line} 行：{e.reason}（{e.text}）</li>)}
+                {parsed.errors.map((e, i) => <li key={`e${i}`} className="text-red-600">{tr("第")} {e.line} {tr("行：")}{e.reason}{tr("（")}{e.text}{tr("）")}</li>)}
               </ul>
             )}
           </div>

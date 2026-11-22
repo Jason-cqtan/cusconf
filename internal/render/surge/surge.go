@@ -539,7 +539,8 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 		return "FINAL," + policy + ",dns-failed", true
 	case "RULE-SET":
 		rs := c.RuleSets[r.Value]
-		if rs.SurgeURL == "" {
+		u, _ := c.RuleSetURL(rs, rs.SurgeURL, "list")
+		if u == "" {
 			w.Add("rule", r.Value, "rule set has no Surge URL; skipped")
 			return "", false
 		}
@@ -547,7 +548,7 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 		if rs.Behavior == "domain" {
 			kind = "DOMAIN-SET"
 		}
-		line := fmt.Sprintf("%s,%s,%s", kind, rs.SurgeURL, policy)
+		line := fmt.Sprintf("%s,%s,%s", kind, u, policy)
 		if rs.Behavior == "ipcidr" || r.NoResolve {
 			line += ",no-resolve"
 		}

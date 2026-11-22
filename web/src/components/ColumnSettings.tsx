@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowDownToLine, ArrowUpToLine } from "lucide-react";
 import { Button, Modal, Toggle } from "./ui";
 import { SortableList } from "./Sortable";
+import { tr } from "../i18n";
 
 /** Per-table column preferences. `order` may list ids a given table doesn't show. */
 export interface ColumnPrefs {
@@ -78,26 +79,26 @@ function Dialog({ onClose, columns, defaultOrder, prefs, onSave }: { onClose: ()
     <Modal
       open
       onClose={onClose}
-      title="列设置"
+      title={tr("列设置")}
       footer={
         <>
-          <Button variant="ghost" className="mr-auto" onClick={() => { setList(orderColumns(columns, defaultOrder)); setHidden(new Set()); setFrozen(new Set()); }}>恢复默认</Button>
-          <Button onClick={onClose}>取消</Button>
-          <Button variant="primary" onClick={save}>确定</Button>
+          <Button variant="ghost" className="mr-auto" onClick={() => { setList(orderColumns(columns, defaultOrder)); setHidden(new Set()); setFrozen(new Set()); }}>{tr("恢复默认")}</Button>
+          <Button onClick={onClose}>{tr("取消")}</Button>
+          <Button variant="primary" onClick={save}>{tr("确定")}</Button>
         </>
       }
     >
       <div className="mb-3 flex flex-wrap gap-1">
-        <Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>全部显示</Button>
-        <Button size="sm" variant="ghost" onClick={() => setFrozen(new Set())}>取消全部固定</Button>
+        <Button size="sm" variant="ghost" onClick={() => setHidden(new Set())}>{tr("全部显示")}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setFrozen(new Set())}>{tr("取消全部固定")}</Button>
       </div>
-      <p className="mb-2 text-xs text-zinc-500">拖动调整顺序。固定的列始终排在最左侧，横向滚动时保持可见。</p>
+      <p className="mb-2 text-xs text-zinc-500">{tr("拖动调整顺序。固定的列始终排在最左侧，横向滚动时保持可见。")}</p>
       <div className="overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
         <div className="grid grid-cols-[1.5rem_1fr_4rem_4rem_3.5rem] items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-xs font-medium text-zinc-500">
           <span />
-          <span>列名</span>
-          <span className="text-center">隐藏</span>
-          <span className="text-center">固定</span>
+          <span>{tr("列名")}</span>
+          <span className="text-center">{tr("隐藏")}</span>
+          <span className="text-center">{tr("固定")}</span>
           <span />
         </div>
         <SortableList
@@ -117,15 +118,15 @@ function Dialog({ onClose, columns, defaultOrder, prefs, onSave }: { onClose: ()
                   <Toggle checked={frozen.has(c.id)} onChange={(v) => toggle(frozen, setFrozen, c.id, v)} />
                 </span>
                 <span className="flex justify-end gap-0.5">
-                  <button type="button" title="置顶" disabled={i === 0} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800" onClick={() => move(i, "top")}><ArrowUpToLine size={14} /></button>
-                  <button type="button" title="置底" disabled={i === list.length - 1} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800" onClick={() => move(i, "bottom")}><ArrowDownToLine size={14} /></button>
+                  <button type="button" title={tr("置顶")} disabled={i === 0} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800" onClick={() => move(i, "top")}><ArrowUpToLine size={14} /></button>
+                  <button type="button" title={tr("置底")} disabled={i === list.length - 1} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800" onClick={() => move(i, "bottom")}><ArrowDownToLine size={14} /></button>
                 </span>
               </div>
             );
           }}
         />
       </div>
-      {visibleCount === 1 && <p className="mt-2 text-xs text-zinc-500">至少保留一列可见。</p>}
+      {visibleCount === 1 && <p className="mt-2 text-xs text-zinc-500">{tr("至少保留一列可见。")}</p>}
     </Modal>
   );
 

@@ -4,6 +4,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordi
 import { CSS } from "@dnd-kit/utilities";
 import { X } from "lucide-react";
 import { cx } from "./ui";
+import { tr } from "../i18n";
 
 /**
  * Wrapping row of chips that can be dragged into a new order.
@@ -52,7 +53,7 @@ function Chip({ id, tone, onRemove }: { id: string; tone: keyof typeof tones; on
       {...attributes}
       {...listeners}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      title="拖动调整顺序"
+      title={tr("拖动调整顺序")}
       className={cx(
         "inline-flex cursor-grab touch-none items-center gap-1 rounded-full border py-0.5 text-xs select-none active:cursor-grabbing",
         onRemove ? "pr-1 pl-2.5" : "px-2.5",
@@ -64,7 +65,7 @@ function Chip({ id, tone, onRemove }: { id: string; tone: keyof typeof tones; on
       {onRemove && (
         <button
           type="button"
-          aria-label={`移除 ${id}`}
+          aria-label={tr("移除 {0}", id)}
           className="ml-0.5 rounded-full p-0.5 opacity-60 hover:text-red-600 hover:opacity-100"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onRemove(id)}
