@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS access_log (
 );
 CREATE INDEX IF NOT EXISTS access_log_token ON access_log(token, at);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS node_tests (key TEXT PRIMARY KEY, data TEXT NOT NULL, tested_at INTEGER NOT NULL);
 `
 
 func Open(path string) (*Store, error) {
@@ -144,6 +145,9 @@ type Source struct {
 	// RefreshInterval in seconds; 0 disables scheduled refresh.
 	RefreshInterval int  `json:"refreshInterval"`
 	Enabled         bool `json:"enabled"`
+	// SelfHosted marks the source's nodes as your own servers: they are kept out of
+	// region-based groups and can be grouped on their own.
+	SelfHosted bool `json:"selfHosted"`
 
 	// Status, maintained by the fetcher.
 	FetchedAt int64    `json:"fetchedAt,omitempty"`
@@ -203,6 +207,7 @@ func (s *Store) AllNodes() ([]*node.Node, error) {
 		}
 		for _, n := range ns {
 			n.Source = src.ID
+			n.SelfHosted = src.SelfHosted
 		}
 		out = append(out, ns...)
 	}
@@ -298,4 +303,29 @@ func (s *Store) Setting(key string) (string, error) {
 func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
+}
+
+// --- node test results (stored as opaque JSON, keyed by node.Key()) ---
+
+func (s *Store) PutTest(key string, data []byte, at int64) error {
+	_, err := s.db.Exec(`INSERT INTO node_tests(key,data,tested_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET data=excluded.data, tested_at=excluded.tested_at`, key, string(data), at)
+	return err
+}
+
+func (s *Store) Tests() (map[string][]byte, error) {
+	rows, err := s.db.Query(`SELECT key, data FROM node_tests`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]byte{}
+	for rows.Next() {
+		var k, d string
+		if err := rows.Scan(&k, &d); err != nil {
+			return nil, err
+		}
+		out[k] = []byte(d)
+	}
+	return out, rows.Err()
 }

@@ -66,6 +66,9 @@ func Render(c *render.Config) render.Result {
 		if r.Type == "FINAL" || r.Type == "MATCH" {
 			hasFinal = true
 		}
+		for _, c := range r.CommentLines() {
+			b.WriteString("# " + c + "\n")
+		}
 		b.WriteString(line + "\n")
 	}
 	if !hasFinal {
@@ -80,7 +83,18 @@ func Render(c *render.Config) render.Result {
 	if len(g.Hosts) > 0 {
 		b.WriteString("\n[Host]\n")
 		for _, h := range g.Hosts {
-			fmt.Fprintf(&b, "%s = %s\n", h.Domain, h.Value)
+			if strings.Contains(h.Domain, ":") && !c.Matrix.Supports(c.Target, "host.rule-set") {
+				w.Add("host", h.Domain, "rule-set host entry %s; skipped", c.Matrix.Requirement(c.Target, "host.rule-set"))
+				continue
+			}
+			if h.Comment != "" {
+				fmt.Fprintf(&b, "# %s\n", h.Comment)
+			}
+			v := h.Value
+			if ips := h.IPs(); ips != nil {
+				v = strings.Join(ips, ", ")
+			}
+			fmt.Fprintf(&b, "%s = %s\n", h.Domain, v)
 		}
 	}
 

@@ -8,7 +8,8 @@ const ipRe = /^(\d{1,3}(\.\d{1,3}){3}|[0-9a-f:]+:[0-9a-f:.]*)$/i;
 export function hostKind(h: Host): "ip" | "server" | "alias" | "" {
   if (!h.value) return "";
   if (h.value.startsWith("server:")) return "server";
-  return ipRe.test(h.value) ? "ip" : "alias";
+  // One IP, or several separated by commas.
+  return h.value.split(",").every((p) => ipRe.test(p.trim())) ? "ip" : "alias";
 }
 
 const kindInfo = {
@@ -24,9 +25,10 @@ export function parseHosts(text: string): { hosts: Host[]; errors: string[] } {
   text.split(/\r?\n/).forEach((raw, i) => {
     const t = raw.trim();
     if (!t || /^(#|\/\/|;)/.test(t) || /^\[.*\]$/.test(t)) return;
-    const m = t.match(/^([^=\s]+)\s*=\s*([^\s#;]+)/) ?? t.match(/^([^:\s]+)\s*:\s*['"]?([^\s'"#]+)/); // Surge, or Clash "domain: ip"
+    // Surge "domain = value[, value…]" (a trailing "# …" is a comment), or Clash "domain: ip".
+    const m = t.match(/^([^=\s]+)\s*=\s*(.+?)\s*(?:\s#.*)?$/) ?? t.match(/^([^:\s]+)\s*:\s*['"]?([^\s'"#]+)/);
     if (!m) return void errors.push(`第 ${i + 1} 行无法识别：${t}`);
-    hosts.push({ domain: m[1], value: m[2] });
+    hosts.push({ domain: m[1], value: m[2].replace(/\s*,\s*/g, ", ") });
   });
   return { hosts, errors };
 }
@@ -41,7 +43,7 @@ export function HostsEditor({ hosts, onChange }: { hosts: Host[]; onChange: (h: 
         <div>
           <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Host（本地 DNS 映射）</div>
           <p className="text-xs text-zinc-500">
-            对应 Surge 的 [Host] 段。值可以是 IP、另一个域名，或 <code>server:DNS地址</code> 指定解析服务器；域名支持 <code>*.example.com</code>。
+            对应 Surge 的 [Host] 段。值可以是 IP（多个用逗号分隔）、另一个域名，或 <code>server:DNS地址</code>（可为 DoH 地址）指定解析服务器；域名支持 <code>*.example.com</code>。
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -54,12 +56,15 @@ export function HostsEditor({ hosts, onChange }: { hosts: Host[]; onChange: (h: 
           {hosts.map((h, i) => {
             const k = hostKind(h);
             return (
-              <div key={i} className="flex flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap">
+              <div key={i} className="px-3 py-2">
+              {h.comment && <div className="mb-1 truncate font-mono text-xs text-emerald-700 dark:text-emerald-400" title={h.comment}># <span className="font-sans">{h.comment}</span></div>}
+              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                 <Input className="h-8 min-w-0 flex-1 font-mono text-xs" placeholder="example.com 或 *.example.com" value={h.domain} onChange={(e) => set(i, { domain: e.target.value.trim() })} />
                 <span className="text-zinc-400">=</span>
-                <Input className="h-8 min-w-0 flex-1 font-mono text-xs" placeholder="1.2.3.4 / other.com / server:223.5.5.5" value={h.value} onChange={(e) => set(i, { value: e.target.value.trim() })} />
+                <Input className="h-8 min-w-0 flex-1 font-mono text-xs" placeholder="1.2.3.4, 5.6.7.8 / other.com / server:https://dns.alidns.com/dns-query" value={h.value} onChange={(e) => set(i, { value: e.target.value.trim() })} />
                 <span className="w-20 shrink-0" title={k ? kindInfo[k].stash : undefined}>{k && <Badge color={kindInfo[k].color}>{kindInfo[k].label}</Badge>}</span>
                 <Button variant="danger" size="sm" onClick={() => onChange(hosts.filter((_, j) => j !== i))} aria-label="删除"><Trash2 size={14} /></Button>
+              </div>
               </div>
             );
           })}

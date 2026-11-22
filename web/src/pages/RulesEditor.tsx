@@ -1,26 +1,12 @@
 import { useState } from "react";
-import { ClipboardPaste, Plus, Trash2 } from "lucide-react";
+import { ClipboardPaste, MessageSquareText, Plus, Trash2 } from "lucide-react";
 import type { Rule, RuleSet } from "../api";
-import { Badge, Button, Card, Field, Input, Modal, Select, Toggle } from "../components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx, useFlash } from "../components/ui";
 import { SortableList } from "../components/Sortable";
 import { uid, type EditableProfile, type EditableRule } from "./ProfileEditor";
+import { presetSources } from "./rulePresets";
 import { ImportRulesDialog, ruleTypes } from "./ImportRules";
 
-
-const bm7Presets = [
-  "OpenAI", "Claude", "Gemini", "Copilot", "Netflix", "Disney", "YouTube", "Spotify", "TikTok", "HBO", "PrimeVideo", "Hulu",
-  "Telegram", "X", "Facebook", "Instagram", "Google", "GitHub", "Microsoft", "Apple", "AppleMedia", "Steam", "Epic",
-  "PayPal", "Speedtest", "Advertising", "Privacy", "Global", "ChinaMax", "China", "Lan",
-];
-
-// Display name → folder name in blackmatrix7/ios_rule_script, where they differ.
-const bm7Folder: Record<string, string> = { X: "Twitter" };
-
-function bm7(name: string): RuleSet {
-  const base = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/";
-  const dir = bm7Folder[name] ?? name;
-  return { name, behavior: "classical", surgeUrl: `${base}Surge/${dir}/${dir}.list`, stashUrl: `${base}Clash/${dir}/${dir}.yaml`, stashFormat: "yaml", interval: 86400 };
-}
 
 type Upd = (f: (p: EditableProfile) => EditableProfile) => void;
 
@@ -40,6 +26,9 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
   const setRules = (rules: EditableRule[]) => update((o) => ({ ...o, rules }));
   const patch = (i: number, r: Partial<Rule>) => setRules(p.rules.map((x, j) => (j === i ? { ...x, ...r } : x)));
   const [importing, setImporting] = useState(false);
+  const [flashId, flash] = useFlash();
+  // Rules whose comment field is open although still empty.
+  const [commenting, setCommenting] = useState<Set<string>>(new Set());
 
   return (
     <section className="space-y-2">
@@ -54,6 +43,7 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
             const r: EditableRule = { type: "DOMAIN-SUFFIX", value: "", policy: p.groups[0]?.name ?? "DIRECT", _uid: uid() };
             const fin = p.rules.findIndex((x) => x.type === "FINAL");
             setRules(fin >= 0 ? [...p.rules.slice(0, fin), r, ...p.rules.slice(fin)] : [...p.rules, r]);
+            flash(r._uid!);
           }}><Plus size={14} /> 添加规则</Button>
         </div>
       </div>
@@ -63,13 +53,16 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
         policies={policies}
         ruleSets={p.ruleSets}
         existing={p.rules}
-        onImport={(rules, newSets, position) => update((o) => {
+        onImport={(rules, newSets, position) => {
           const add = rules.map((r) => ({ ...r, _uid: uid() }));
+          if (add[0]) flash(add[0]._uid);
+          update((o) => {
           const fin = o.rules.findIndex((x) => x.type === "FINAL");
           const merged = position === "top" ? [...add, ...o.rules]
             : fin >= 0 ? [...o.rules.slice(0, fin), ...add, ...o.rules.slice(fin)] : [...o.rules, ...add];
           return { ...o, ruleSets: [...o.ruleSets, ...newSets], rules: merged };
-        })}
+          });
+        }}
       />
       <Card className="overflow-hidden">
         <SortableList
@@ -77,9 +70,25 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
           ids={ids}
           onReorder={setRules}
           render={(r, i, handle) => (
-            <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 sm:flex-nowrap">
+            <div data-flash={r._uid} className={cx("border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2", flashId === r._uid && "flash-row")}>
+            {commenting.has(ids[i]) ? (
+              <div className="mb-1 flex items-center gap-1.5 pl-6 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                #
+                <input className="min-w-0 flex-1 border-b border-emerald-500/60 bg-transparent py-0.5 font-sans outline-none" value={r.comment ?? ""} placeholder="备注，生成配置时写在这条规则上方" autoFocus
+                  onChange={(e) => patch(i, { comment: e.target.value || undefined })}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === "Escape") && e.currentTarget.blur()}
+                  onBlur={() => setCommenting((s) => { const n = new Set(s); n.delete(ids[i]); return n; })} />
+              </div>
+            ) : r.comment && (
+              // A comment, not a rule: shown like a code comment above its rule; click to edit.
+              <button type="button" title="点击编辑备注" onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}
+                className="mb-1 block max-w-full truncate pl-6 text-left font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                # <span className="font-sans">{r.comment}</span>
+              </button>
+            )}
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               {handle}
-              <Select className="h-8 w-40 shrink-0 text-xs" value={r.type} onChange={(e) => patch(i, { type: e.target.value, value: "" })}>
+              <Select className="h-8 w-48 shrink-0 text-xs" value={r.type} onChange={(e) => patch(i, { type: e.target.value, value: "" })}>
                 {ruleTypes.map((t) => <option key={t}>{t}</option>)}
               </Select>
               {r.type === "RULE-SET" ? (
@@ -98,7 +107,10 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
               {["IP-CIDR", "IP-CIDR6", "GEOIP", "RULE-SET"].includes(r.type) && (
                 <label className="flex items-center gap-1 text-xs whitespace-nowrap"><input type="checkbox" checked={!!r.noResolve} onChange={(e) => patch(i, { noResolve: e.target.checked })} />no-resolve</label>
               )}
+              <Button variant="ghost" size="sm" className={r.comment ? "text-indigo-600" : "text-zinc-400"} title="备注" aria-label="备注"
+                onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}><MessageSquareText size={14} /></Button>
               <Button variant="danger" size="sm" onClick={() => setRules(p.rules.filter((_, j) => j !== i))} aria-label="删除"><Trash2 size={14} /></Button>
+            </div>
             </div>
           )}
         />
@@ -188,13 +200,12 @@ function RuleSetsSection({ profile: p, update }: { profile: EditableProfile; upd
       </Modal>
 
       <PresetPicker open={presets} onClose={() => setPresets(false)} existing={p.ruleSets.map((r) => r.name)} policies={["DIRECT", "REJECT", ...p.groups.map((g) => g.name)]}
-        onAdd={(names, policy, addRules) => {
+        onAdd={(sets, ipOnly, policy, addRules) => {
           update((o) => {
-            const sets = names.map(bm7);
             let rules = o.rules;
             if (addRules) {
               const fin = rules.findIndex((r) => r.type === "FINAL");
-              const nr = names.map((n) => ({ type: "RULE-SET", value: n, policy, _uid: uid() }));
+              const nr = sets.map((rs) => ({ type: "RULE-SET", value: rs.name, policy, noResolve: ipOnly.has(rs.name) || undefined, _uid: uid() }));
               rules = fin >= 0 ? [...rules.slice(0, fin), ...nr, ...rules.slice(fin)] : [...rules, ...nr];
             }
             return { ...o, ruleSets: [...o.ruleSets, ...sets], rules };
@@ -205,28 +216,67 @@ function RuleSetsSection({ profile: p, update }: { profile: EditableProfile; upd
   );
 }
 
-function PresetPicker({ open, onClose, existing, policies, onAdd }: { open: boolean; onClose: () => void; existing: string[]; policies: string[]; onAdd: (names: string[], policy: string, addRules: boolean) => void }) {
+function PresetPicker({ open, onClose, existing, policies, onAdd }: {
+  open: boolean;
+  onClose: () => void;
+  existing: string[];
+  policies: string[];
+  onAdd: (sets: RuleSet[], ipOnly: Set<string>, policy: string, addRules: boolean) => void;
+}) {
+  const [srcId, setSrcId] = useState(presetSources[0].id);
   const [sel, setSel] = useState<string[]>([]);
+  const [q, setQ] = useState("");
   const [policy, setPolicy] = useState(policies[2] ?? "DIRECT");
   const [addRules, setAddRules] = useState(true);
+  const src = presetSources.find((x) => x.id === srcId)!;
+  const k = q.trim().toLowerCase();
+  const commonNames = new Set(src.common.map((c) => c.name));
+  const common = src.common.filter((c) => !k || `${c.name} ${c.label}`.toLowerCase().includes(k));
+  const rest = src.all.filter((n) => !commonNames.has(n) && (!k || n.toLowerCase().includes(k)));
+
+  const chip = (name: string, label?: string) => {
+    const has = existing.includes(name);
+    const on = sel.includes(name);
+    return (
+      <button key={name} type="button" disabled={has} title={has ? "已存在同名规则集" : src.ipOnly.has(name) ? "纯 IP 列表，规则会加 no-resolve" : undefined}
+        onClick={() => setSel((cur) => (cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name]))}
+        className={`rounded-full border px-2.5 py-0.5 text-xs disabled:opacity-40 ${on ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-zinc-300 dark:border-zinc-700"}`}>
+        {name}{label && label !== name && <span className="ml-1 text-zinc-500">{label}</span>}
+      </button>
+    );
+  };
+
+  const close = () => { setSel([]); setQ(""); onClose(); };
   return (
-    <Modal open={open} onClose={onClose} title="从 blackmatrix7/ios_rule_script 添加"
-      footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" disabled={!sel.length} onClick={() => { onAdd(sel, policy, addRules); setSel([]); }}>添加 {sel.length || ""}</Button></>}>
+    <Modal open={open} onClose={close} title="从预设添加规则集" wide
+      footer={<><Button onClick={close}>取消</Button><Button variant="primary" disabled={!sel.length} onClick={() => { onAdd(sel.map(src.build), src.ipOnly, policy, addRules); close(); }}>添加 {sel.length || ""}</Button></>}>
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-1.5">
-          {bm7Presets.map((n) => {
-            const has = existing.includes(n);
-            const on = sel.includes(n);
-            return (
-              <button key={n} disabled={has} onClick={() => setSel((cur) => (cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]))}
-                className={`rounded-full border px-2.5 py-0.5 text-xs disabled:opacity-40 ${on ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-zinc-300 dark:border-zinc-700"}`}>
-                {n}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2">
+          {presetSources.map((x) => (
+            <Button key={x.id} size="sm" variant={x.id === srcId ? "primary" : "secondary"} onClick={() => { setSrcId(x.id); setSel([]); }}>
+              {x.name} <span className="opacity-70">{x.all.length}</span>
+            </Button>
+          ))}
+          <a className="text-xs text-indigo-600 hover:underline" href={`https://github.com/${src.repo}`} target="_blank" rel="noreferrer">{src.repo}</a>
+          <Input className="ml-auto h-8 w-48 text-xs" placeholder="搜索规则集" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        {common.length > 0 && (
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">常用</div>
+            <div className="flex flex-wrap gap-1.5">{common.map((c) => chip(c.name, c.label))}</div>
+          </div>
+        )}
+        {rest.length > 0 && (
+          <div>
+            <div className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">全部（{rest.length}）</div>
+            <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">{rest.map((n) => chip(n))}</div>
+          </div>
+        )}
+        {!common.length && !rest.length && <p className="text-sm text-zinc-500">没有匹配的规则集</p>}
+        {src.id === "acl4ssr" && <p className="text-xs text-zinc-500">ACL4SSR 的规则是通用 .list 格式，Surge 与 Stash 共用同一个地址（Stash 以 text 格式加载）。</p>}
         <Toggle checked={addRules} onChange={setAddRules} label="同时添加规则（插入到 FINAL 之前）" />
         {addRules && <Field label="规则使用的策略"><Select value={policy} onChange={(e) => setPolicy(e.target.value)}>{policies.map((x) => <option key={x}>{x}</option>)}</Select></Field>}
+        {sel.length > 0 && <p className="text-xs text-zinc-500">已选：{sel.join("、")}</p>}
       </div>
     </Modal>
   );

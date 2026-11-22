@@ -26,6 +26,7 @@ export default function SourcesPage() {
   return (
     <>
       <PageHeader
+        sticky
         title="订阅源"
         desc="机场订阅链接或手动添加的自建节点。支持 URI 列表 / Base64 / Clash YAML / Surge / sing-box 格式。"
         actions={<Button variant="primary" onClick={() => setEdit({ ...blank })}><Plus size={16} /> 添加</Button>}
@@ -44,6 +45,7 @@ export default function SourcesPage() {
                     <Badge color={s.kind === "url" ? "indigo" : "zinc"}>{s.kind === "url" ? "订阅" : "手动"}</Badge>
                     {!s.enabled && <Badge>已停用</Badge>}
                     {s.format && <Badge>{s.format}</Badge>}
+                    {s.selfHosted && <Badge color="green">自建</Badge>}
                   </div>
                   {s.kind === "url" && <div className="truncate font-mono text-xs text-zinc-500 max-w-xl">{s.url}</div>}
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
@@ -113,7 +115,11 @@ function SourceForm({ initial, onClose, onSaved }: { initial: Partial<Source>; o
         <div className="grid grid-cols-2 gap-3">
           <Field label="名称"><Input value={s.name} onChange={(e) => set({ name: e.target.value })} placeholder="机场 A" /></Field>
           <Field label="类型">
-            <Select value={s.kind} onChange={(e) => set({ kind: e.target.value as Source["kind"] })} disabled={!!s.id}>
+            <Select value={s.kind} onChange={(e) => {
+              const kind = e.target.value as Source["kind"];
+              // Hand-entered nodes are usually your own servers.
+              set(s.id ? { kind } : { kind, selfHosted: kind === "manual" });
+            }} disabled={!!s.id}>
               <option value="url">订阅链接</option>
               <option value="manual">手动节点</option>
             </Select>
@@ -150,6 +156,10 @@ function SourceForm({ initial, onClose, onSaved }: { initial: Partial<Source>; o
             {preview && preview.nodes.length > 0 && <NodeTable nodes={preview.nodes} compact className="max-h-72" />}
           </>
         )}
+        <div className="space-y-1">
+          <Toggle checked={!!s.selfHosted} onChange={(v) => set({ selfHosted: v })} label="自建节点" />
+          <p className="text-xs text-zinc-500">自建节点不参与按国家 / 地区分组（包括「其他」），在默认配置里单独归入「自建」策略组。</p>
+        </div>
         <Toggle checked={!!s.enabled} onChange={(v) => set({ enabled: v })} label="启用" />
         <ErrorText error={err} />
       </div>

@@ -3,8 +3,12 @@ package engine
 
 import (
 	"fmt"
+	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
+	"sort"
+	"strings"
 
 	"github.com/cusconf/cusconf/internal/capability"
 	"github.com/cusconf/cusconf/internal/node"
@@ -19,6 +23,8 @@ type Request struct {
 	Nodes      []*node.Node // all nodes from all sources (Source field set)
 	Target     capability.Target
 	ManagedURL string
+	// SubscriptionURLs of the profile's sources; their hosts get DIRECT rules too.
+	SubscriptionURLs []string
 }
 
 // SelectNodes applies the profile's source selection, filter and renames.
@@ -91,11 +97,73 @@ func ResolveGroups(p *profile.Profile, nodes []*node.Node, w *render.Warnings) [
 				}
 			}
 		}
-		rg.Members = applyOrder(rg.Members, g.Order)
 		out = append(out, rg)
 	}
 	breakCycles(out, w)
+	flattenFiltered(out, nodes)
+	for i := range out {
+		out[i].Members = applyOrder(out[i].Members, out[i].Order)
+	}
 	return out
+}
+
+// flattenFiltered expands the member groups of groups with a MemberFilter into the
+// nodes they reach that match it. Cycles must already be broken.
+func flattenFiltered(groups []render.Group, nodes []*node.Node) {
+	byName := map[string]*node.Node{}
+	for _, n := range nodes {
+		byName[n.Name] = n
+	}
+	idx := map[string]int{}
+	for i, g := range groups {
+		idx[g.Name] = i
+	}
+	done := make([]bool, len(groups))
+	var final func(i int) []string
+	var reach func(i int, out *[]string, seen map[string]bool)
+	// reach lists the nodes reachable from group i, in member order.
+	reach = func(i int, out *[]string, seen map[string]bool) {
+		for _, m := range final(i) {
+			if j, ok := idx[m]; ok {
+				reach(j, out, seen)
+			} else if byName[m] != nil && !seen[m] {
+				seen[m] = true
+				*out = append(*out, m)
+			}
+		}
+	}
+	final = func(i int) []string {
+		g := &groups[i]
+		if done[i] || g.MemberFilter == nil {
+			return g.Members
+		}
+		done[i] = true
+		var members []string
+		seen := map[string]bool{}
+		for _, m := range g.Members {
+			j, isGroup := idx[m]
+			if !isGroup {
+				if !seen[m] {
+					seen[m] = true
+					members = append(members, m)
+				}
+				continue
+			}
+			var reached []string
+			reach(j, &reached, map[string]bool{})
+			for _, n := range reached {
+				if !seen[n] && g.MemberFilter.Match(byName[n]) {
+					seen[n] = true
+					members = append(members, n)
+				}
+			}
+		}
+		g.Members = members
+		return members
+	}
+	for i := range groups {
+		final(i)
+	}
 }
 
 // breakCycles removes group->group edges that close a cycle.
@@ -153,9 +221,19 @@ func Generate(req Request) (render.Result, error) {
 	for _, rs := range req.Profile.RuleSets {
 		sets[rs.Name] = rs
 	}
+	rules := req.Profile.Rules
+	general := req.Profile.General
+	if !general.DisableServerDirect {
+		direct := ServerDirectRules(nodes, req.SubscriptionURLs)
+		if h := dohHost(general.ServerDNS); h != "" {
+			direct = append([]profile.Rule{{Type: "DOMAIN", Value: h, Policy: "DIRECT"}}, direct...)
+		}
+		rules = append(direct, rules...)
+	}
+	general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, nodes, req.SubscriptionURLs)...)
 	cfg := &render.Config{
 		Target: t, Matrix: mx, Nodes: nodes, Groups: groups,
-		Rules: req.Profile.Rules, RuleSets: sets, General: req.Profile.General, ManagedURL: req.ManagedURL,
+		Rules: rules, RuleSets: sets, General: general, ManagedURL: req.ManagedURL,
 	}
 	var res render.Result
 	switch t.Client {
@@ -196,4 +274,103 @@ func applyOrder(members, order []string) []string {
 		return 0
 	})
 	return out
+}
+
+// ServerDirectRules sends connections to node servers and subscription hosts
+// DIRECT. Without them, traffic to those hosts from other apps (or a subscription
+// refresh) can be routed into another proxy, which for some protocols never
+// completes. Domains get DOMAIN rules, IPs IP-CIDR(6) host routes.
+// serverDomains lists the domain names (not IPs) of node servers and subscription hosts, sorted.
+func serverDomains(nodes []*node.Node, subscriptionURLs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(host string) {
+		host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[].")
+		if host == "" || seen[host] {
+			return
+		}
+		seen[host] = true
+		if _, err := netip.ParseAddr(host); err != nil {
+			out = append(out, host)
+		}
+	}
+	for _, u := range subscriptionURLs {
+		if pu, err := url.Parse(u); err == nil {
+			add(pu.Hostname())
+		}
+	}
+	for _, n := range nodes {
+		add(n.Server)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ServerDNSHosts maps every node server and subscription domain to General.ServerDNS,
+// skipping domains the profile's own hosts already map.
+func ServerDNSHosts(g profile.General, nodes []*node.Node, subscriptionURLs []string) []profile.Host {
+	if g.ServerDNS == "" {
+		return nil
+	}
+	mine := map[string]bool{}
+	for _, h := range g.Hosts {
+		mine[strings.ToLower(h.Domain)] = true
+	}
+	var out []profile.Host
+	for _, d := range serverDomains(nodes, subscriptionURLs) {
+		if !mine[d] {
+			out = append(out, profile.Host{Domain: d, Value: "server:" + g.ServerDNS})
+		}
+	}
+	if len(out) > 0 {
+		out[0].Comment = "节点与订阅域名（自动生成）：用国内 DNS 解析，避免经代理的加密 DNS 需要先连上节点"
+	}
+	return out
+}
+
+// dohHost returns the host name of a DoH / DoT / DoQ server address, or "" for a plain IP.
+func dohHost(s string) string {
+	if !strings.Contains(s, "://") {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	h := u.Hostname()
+	if _, err := netip.ParseAddr(h); err == nil {
+		return ""
+	}
+	return strings.ToLower(h)
+}
+
+func ServerDirectRules(nodes []*node.Node, subscriptionURLs []string) []profile.Rule {
+	seen := map[string]bool{}
+	var domains, ips []profile.Rule
+	add := func(host string) {
+		host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[].")
+		if host == "" || seen[host] {
+			return
+		}
+		seen[host] = true
+		if ip, err := netip.ParseAddr(host); err == nil {
+			if ip.Is4() || ip.Is4In6() {
+				ips = append(ips, profile.Rule{Type: "IP-CIDR", Value: ip.Unmap().String() + "/32", Policy: "DIRECT", NoResolve: true})
+			} else {
+				ips = append(ips, profile.Rule{Type: "IP-CIDR6", Value: ip.String() + "/128", Policy: "DIRECT", NoResolve: true})
+			}
+			return
+		}
+		domains = append(domains, profile.Rule{Type: "DOMAIN", Value: host, Policy: "DIRECT"})
+	}
+	for _, u := range subscriptionURLs {
+		if pu, err := url.Parse(u); err == nil {
+			add(pu.Hostname())
+		}
+	}
+	for _, n := range nodes {
+		add(n.Server)
+	}
+	sort.SliceStable(domains, func(i, j int) bool { return domains[i].Value < domains[j].Value })
+	return append(domains, ips...)
 }

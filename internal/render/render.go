@@ -97,4 +97,4 @@ func DowngradeGroupType(c *Config, g *Group, w *Warnings) profile.GroupType {
 }
 
 // DefaultTestURL is used for automatic groups when none is configured.
-const DefaultTestURL = "http://www.gstatic.com/generate_204"
+const DefaultTestURL = "https://cp.cloudflare.com/generate_204"

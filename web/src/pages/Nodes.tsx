@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Pin, Settings } from "lucide-react";
-import { api, formatBytes, type Node, type Source } from "../api";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Loader2, Pin, Play, Settings } from "lucide-react";
+import { api, formatBytes, formatTime, type Node, type Source, type TestResult } from "../api";
+import { LatencyCell, SourceCell, TestDetail, TestToolbar, UnlockCell, reportSources, useServices } from "./Testing";
 import { Badge, Card, Empty, ErrorText, Input, PageHeader, Toggle, cx } from "../components/ui";
 import { MultiSelect } from "../components/MultiSelect";
 import { ColumnSettings, loadPrefs, orderColumns, savePrefs, type ColumnPrefs } from "../components/ColumnSettings";
@@ -31,7 +32,7 @@ export function nodeDetail(n: Node): string {
   return parts.join(" · ");
 }
 
-type ColId = "name" | "region" | "type" | "address" | "detail" | "source";
+type ColId = string; // fixed ids plus "score:<source>" for each score source
 interface Col {
   id: ColId;
   label: string;
@@ -61,27 +62,38 @@ function initialPrefs(): ColumnPrefs {
  * - Frozen columns are pinned to the left while scrolling horizontally.
  * Preferences are kept in this browser. The wrapper is the scroll container, so give it a height via className.
  */
-export function NodeTable({ nodes, sources, compact, className, groupBySource }: {
+export function NodeTable({ nodes, sources, compact, className, groupBySource, results, onShowResult, onTestNode, testing }: {
   nodes: Node[];
   sources?: Source[];
   compact?: boolean;
   className?: string;
   /** Show nodes under collapsible per-source group rows (the 来源 column is then dropped). */
   groupBySource?: boolean;
+  /** Test results by node key; adds the test columns when given. */
+  results?: Record<string, TestResult>;
+  onShowResult?: (r: TestResult) => void;
+  /** Adds a per-row "test now" button. */
+  onTestNode?: (n: Node) => void;
+  testing?: Set<string>; // node keys being tested
 }) {
+  const services = useServices();
   const srcName = (id?: string) => sources?.find((s) => s.id === id)?.name ?? "";
   const cols = useMemo<Col[]>(() => {
     const all: (Col | false)[] = [
-      { id: "name", label: "名称", sortKey: (n) => n.name, cell: (n) => <>{n.name}{n.info && <Badge color="amber" className="ml-2">机场信息</Badge>}</> },
+      { id: "name", label: "名称", sortKey: (n) => n.name, cell: (n) => <>{n.name}{n.info && <Badge color="amber" className="ml-2">机场信息</Badge>}{n.selfHosted && <Badge color="green" className="ml-2">自建</Badge>}</> },
       { id: "region", label: "地区", sortKey: (n) => n.region || "￿", cell: (n) => n.region ? <span className="text-xs">{regionLabel(n.region)} {n.region}</span> : <span className="text-zinc-400">—</span> },
       { id: "type", label: "类型", sortKey: (n) => n.type, cell: (n) => <Badge color="indigo">{n.type}</Badge> },
       !compact && { id: "address", label: "地址", sortKey: (n) => `${n.server}:${String(n.port).padStart(5, "0")}`, cell: (n) => <span className="font-mono text-xs text-zinc-500">{n.server}:{n.port}</span> },
       { id: "detail", label: "协议参数", title: "Shadowsocks 显示加密方式与插件；其它协议显示传输层（ws / grpc 等）和 TLS / REALITY", sortKey: (n) => nodeDetail(n) || "￿", cell: (n) => <span className="font-mono text-xs text-zinc-500">{nodeDetail(n) || "—"}</span> },
       !!sources && !groupBySource && { id: "source", label: "来源", sortKey: (n) => srcName(n.source), cell: (n) => <span className="text-xs text-zinc-500">{srcName(n.source)}</span> },
     ];
-    return all.filter(Boolean) as Col[];
+    const base = all.filter(Boolean) as Col[];
+    if (!results) return base;
+    // Test columns come right after the region by default (saved column orders still win).
+    const at = base.findIndex((c) => c.id === "region") + 1;
+    return [...base.slice(0, at), ...testColumns(results, services, onShowResult), ...base.slice(at)];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compact, sources, groupBySource]);
+  }, [compact, sources, groupBySource, results, services]);
 
   const [prefs, setPrefsState] = useState<ColumnPrefs>(initialPrefs);
   const setPrefs = (p: ColumnPrefs) => { setPrefsState(p); savePrefs(PREFS_KEY, p); };
@@ -174,7 +186,23 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource }:
             {c.cell(n)}
           </td>
         ))}
-        <td className={cx("sticky right-0 border-b border-zinc-100 dark:border-zinc-800/60", cellBg)} />
+        <td className={cx("sticky right-0 border-b border-zinc-100 dark:border-zinc-800/60 px-1 text-right", cellBg)}>
+          {onTestNode && !n.info && (
+            testing?.has(n.key)
+              ? <Loader2 size={14} className="mx-1.5 inline animate-spin text-indigo-500" aria-label="测试中" />
+              : (
+                <button
+                  type="button"
+                  title="立即测试此节点（延迟、出口 IP、服务）"
+                  aria-label="测试此节点"
+                  onClick={() => onTestNode(n)}
+                  className="rounded p-1.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 hover:bg-zinc-100 hover:text-indigo-600 dark:hover:bg-zinc-700"
+                >
+                  <Play size={13} />
+                </button>
+              )
+          )}
+        </td>
       </tr>
     );
   }
@@ -241,6 +269,7 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource }:
                         <span className="sticky left-3 inline-flex items-center gap-2 text-sm">
                           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                           <span className="font-medium">{g.src?.name ?? (g.id || "未知来源")}</span>
+                          {g.src?.selfHosted && <Badge color="green">自建</Badge>}
                           <Badge>{g.rows.length} 个节点</Badge>
                           {g.src && <Badge color={g.src.kind === "url" ? "indigo" : "zinc"}>{g.src.kind === "url" ? "订阅" : "手动"}</Badge>}
                           {info && info.total > 0 && <span className="text-xs text-zinc-500">流量 {formatBytes(info.upload + info.download)} / {formatBytes(info.total)}</span>}
@@ -267,6 +296,38 @@ export function NodeTable({ nodes, sources, compact, className, groupBySource }:
   );
 }
 
+// Test result columns; a click opens the detail.
+function testColumns(results: Record<string, TestResult>, services: { id: string; name: string }[], show?: (r: TestResult) => void): Col[] {
+  // Info entries often reuse a real node's endpoint (same key); never show that node's result on them.
+  const R = (n: Node) => (n.info ? undefined : results[n.key]);
+  const pad = (v: number) => String(Math.round(v * 10)).padStart(8, "0");
+  const wrap = (n: Node, el: ReactNode) => {
+    const r = R(n);
+    return r && show ? <button type="button" className="text-left" onClick={() => show(r)}>{el}</button> : el;
+  };
+  return [
+    { id: "latency", label: "延迟", sortKey: (n) => { const r = R(n); return !r ? "z" : r.latency > 0 ? pad(r.latency) : "y"; }, cell: (n) => wrap(n, <LatencyCell r={R(n)} />) },
+    { id: "exit", label: "出口", sortKey: (n) => R(n)?.exit?.country ?? "\uffff", cell: (n) => {
+      const e = R(n)?.exit;
+      return wrap(n, e ? <span className="text-xs" title={[e.ip, e.isp].filter(Boolean).join(" · ")}>{e.country ? `${regionLabel(e.country)} ${e.country}` : "—"} <span className="font-mono text-zinc-500">{e.ip}</span></span> : <span className="text-zinc-400">—</span>);
+    } },
+    // One safety-score column per source: each site rates differently, so they are not merged.
+    // One column per IP data source: its safety score (if it gives one), its labels,
+    // or why it failed. Sources rate differently, so nothing is merged.
+    ...reportSources(results).map((src): Col => ({
+      id: `src:${src}`, label: src, title: `${src}：安全分（0–100，越大越安全）与标记`,
+      sortKey: (n) => {
+        const rep = R(n)?.reports?.find((x) => x.source === src);
+        if (!rep || rep.error) return "z";
+        return rep.score === undefined ? "y" + (rep.flags ?? []).join(",") : pad(100 - rep.score);
+      },
+      cell: (n) => wrap(n, <SourceCell r={R(n)} src={src} />),
+    })),
+    { id: "unlock", label: "解锁", title: "可用的流媒体 / AI 服务；½ 表示部分可用", sortKey: (n) => String(100 - Object.values(R(n)?.services ?? {}).filter((s) => s.status === "yes").length).padStart(3, "0"), cell: (n) => wrap(n, <UnlockCell r={R(n)} services={services} />) },
+    { id: "tested", label: "测试时间", sortKey: (n) => String(1e12 - (R(n)?.testedAt ?? 0)), cell: (n) => <span className="text-xs text-zinc-500">{formatTime(R(n)?.testedAt)}</span> },
+  ];
+}
+
 const UNKNOWN = "?";
 const GROUP_KEY = "cusconf.nodeGroupBySource";
 
@@ -286,10 +347,26 @@ export default function NodesPage() {
   const [grouped, setGroupedState] = useState(() => { try { return localStorage.getItem(GROUP_KEY) !== "0"; } catch { return true; } });
   const setGrouped = (v: boolean) => { setGroupedState(v); try { localStorage.setItem(GROUP_KEY, v ? "1" : "0"); } catch { /* ignore */ } };
   const [err, setErr] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, TestResult>>({});
+  const [detail, setDetail] = useState<TestResult | null>(null);
+  const loadResults = useCallback(() => api.testResults().then(setResults).catch(() => {}), []);
+  const [testing, setTesting] = useState<Set<string>>(new Set());
+  const testNode = async (n: Node) => {
+    setTesting((s) => new Set(s).add(n.key));
+    try {
+      const r = await api.testNode(n.key);
+      setResults((prev) => ({ ...prev, [r.key]: r }));
+    } catch (e) {
+      setErr(`${n.name}：${(e as Error).message}`);
+    } finally {
+      setTesting((s) => { const x = new Set(s); x.delete(n.key); return x; });
+    }
+  };
 
   useEffect(() => {
     Promise.all([api.nodes(), api.sources()]).then(([n, s]) => { setNodes(n); setSources(s); }).catch((e) => setErr(e.message));
-  }, []);
+    loadResults();
+  }, [loadResults]);
 
   const typeOptions = useMemo(() => {
     const c = countBy(nodes, (n) => n.type);
@@ -308,6 +385,7 @@ export default function NodesPage() {
     return sources.filter((s) => c.has(s.id)).map((s) => ({ value: s.id, label: s.name, count: c.get(s.id) }));
   }, [nodes, sources]);
 
+  const intercepted = Object.values(results).filter((r) => r.warning).length;
   const k = q.trim().toLowerCase();
   const shown = nodes.filter((n) =>
     (!k || n.name.toLowerCase().includes(k) || n.server.toLowerCase().includes(k)) &&
@@ -319,7 +397,11 @@ export default function NodesPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0">
-        <PageHeader title="节点" desc="所有启用订阅源的节点。地区由节点名自动识别，可在策略组中按地区、类型、正则筛选。" />
+        <PageHeader
+          title="节点"
+          desc="所有启用订阅源的节点。地区由节点名自动识别；测试结果可在策略组中按延迟、出口地区、风险和解锁情况筛选。"
+          actions={<TestToolbar nodes={shown} sources={sources} onFinished={loadResults} />}
+        />
         <ErrorText error={err} />
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Input className="w-full sm:w-64" placeholder="搜索名称或地址" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -330,9 +412,16 @@ export default function NodesPage() {
           {sources.length > 1 && <span className="ml-auto"><Toggle checked={grouped} onChange={setGrouped} label="按来源分组" /></span>}
         </div>
       </div>
+      {intercepted > 0 && (
+        <p className="mb-3 shrink-0 rounded-md bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+          ⚠ {intercepted} 个节点的测试连接被本机代理软件接管（节点服务器被解析为 Fake IP 198.18.x.x），会按该软件的规则转发、可能被套进其它代理，结果不可信。
+          在 Surge 中添加规则 <code>PROCESS-NAME,cusconf,DIRECT</code>（放在规则最前面），或把 cusconf 部署在不经过本机代理的环境中，然后重新测试。
+        </p>
+      )}
       <Card className="min-h-0 flex-1 overflow-hidden">
-        <NodeTable nodes={shown} sources={sources} className="h-full" groupBySource={grouped && sources.length > 1} />
+        <NodeTable nodes={shown} sources={sources} className="h-full" groupBySource={grouped && sources.length > 1} results={results} onShowResult={setDetail} onTestNode={testNode} testing={testing} />
       </Card>
+      <TestDetail r={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }

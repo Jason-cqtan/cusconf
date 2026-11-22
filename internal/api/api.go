@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,22 +26,24 @@ import (
 	"github.com/cusconf/cusconf/internal/render"
 	"github.com/cusconf/cusconf/internal/source"
 	"github.com/cusconf/cusconf/internal/store"
+	"github.com/cusconf/cusconf/internal/tester"
 )
 
 type Server struct {
 	st      *store.Store
 	src     *source.Manager
+	tests   *tester.Manager
 	auth    *auth
 	baseURL string // public base URL, e.g. https://conf.example.com (optional)
 	web     fs.FS
 }
 
-func New(st *store.Store, src *source.Manager, web fs.FS) (*Server, error) {
+func New(st *store.Store, src *source.Manager, tests *tester.Manager, web fs.FS) (*Server, error) {
 	a, err := loadAuth(st)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{st: st, src: src, auth: a, baseURL: strings.TrimRight(os.Getenv("CUSCONF_BASE_URL"), "/"), web: web}, nil
+	return &Server{st: st, src: src, tests: tests, auth: a, baseURL: strings.TrimRight(os.Getenv("CUSCONF_BASE_URL"), "/"), web: web}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -67,8 +70,17 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/parse", s.parse)
 			r.Get("/nodes", s.allNodes)
 
+			r.Get("/tests/settings", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.tests.Settings()) })
+			r.Put("/tests/settings", s.saveTestSettings)
+			r.Get("/tests/services", s.testServices)
+			r.Get("/tests/results", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.tests.Results()) })
+			r.Get("/tests/job", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.tests.Status()) })
+			r.Post("/tests/job", s.startTest)
+			r.Post("/tests/node", s.testNode)
+			r.Delete("/tests/job", func(w http.ResponseWriter, _ *http.Request) { s.tests.Stop(); writeJSON(w, s.tests.Status()) })
+
 			r.Get("/profiles", s.listProfiles)
-			r.Get("/profiles/template", func(w http.ResponseWriter, _ *http.Request) { p := profile.Default(); writeJSON(w, p) })
+			r.Get("/profiles/template", s.template)
 			r.Get("/profiles/{id}", s.getProfile)
 			r.Post("/profiles", s.saveProfile)
 			r.Put("/profiles/{id}", s.saveProfile)
@@ -259,7 +271,7 @@ func (s *Server) sourceNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) allNodes(w http.ResponseWriter, _ *http.Request) {
-	ns, err := s.st.AllNodes()
+	ns, err := s.nodes()
 	if err != nil {
 		storeErr(w, err)
 		return
@@ -346,12 +358,12 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	nodes, err := s.st.AllNodes()
+	nodes, err := s.nodes()
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
-	res, err := engine.Generate(engine.Request{Profile: &body.Profile, Nodes: nodes, Target: body.Target})
+	res, err := engine.Generate(engine.Request{Profile: &body.Profile, Nodes: nodes, Target: body.Target, SubscriptionURLs: s.subscriptionURLs(&body.Profile)})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -370,7 +382,7 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	all, err := s.st.AllNodes()
+	all, err := s.nodes()
 	if err != nil {
 		storeErr(w, err)
 		return
@@ -382,7 +394,12 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groups {
 		members[g.Name] = g.Members
 	}
-	writeJSON(w, map[string]any{"nodes": views(nodes), "members": members, "warnings": warns})
+	// scopeNodes skips the global filter: the editor offers its choices from them, so
+	// picking one option there does not hide the others.
+	unfiltered := p
+	unfiltered.Filter = profile.Filter{}
+	scope := engine.SelectNodes(&unfiltered, all)
+	writeJSON(w, map[string]any{"nodes": views(nodes), "scopeNodes": views(scope), "members": members, "warnings": warns})
 }
 
 // --- tokens ---
@@ -477,14 +494,14 @@ func (s *Server) serveSub(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusNotFound, "profile not found")
 		return
 	}
-	nodes, err := s.st.AllNodes()
+	nodes, err := s.nodes()
 	if err != nil {
 		fail(http.StatusInternalServerError, "internal error")
 		return
 	}
 	res, err := engine.Generate(engine.Request{
 		Profile: p, Nodes: nodes, Target: tok.Target,
-		ManagedURL: s.publicBase(r) + "/sub/" + tokID,
+		ManagedURL: s.publicBase(r) + "/sub/" + tokID, SubscriptionURLs: s.subscriptionURLs(p),
 	})
 	if err != nil {
 		fail(http.StatusInternalServerError, err.Error())
@@ -569,4 +586,154 @@ func spa(root fs.FS) http.Handler {
 		r2.URL.Path = "/"
 		files.ServeHTTP(w, r2)
 	})
+}
+
+// nodes returns all nodes of enabled sources with their latest test summary attached.
+func (s *Server) nodes() ([]*node.Node, error) {
+	ns, err := s.st.AllNodes()
+	if err != nil {
+		return nil, err
+	}
+	s.tests.Attach(ns)
+	return ns, nil
+}
+
+func (s *Server) saveTestSettings(w http.ResponseWriter, r *http.Request) {
+	var in tester.Settings
+	if !decode(w, r, &in) {
+		return
+	}
+	for i, src := range in.IPSources {
+		if src.Name == "" || src.URL == "" {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("IP 源 %d：名称和地址必填", i+1))
+			return
+		}
+	}
+	if err := s.tests.SaveSettings(in); err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, s.tests.Settings())
+}
+
+func (s *Server) testServices(w http.ResponseWriter, _ *http.Request) {
+	type svc struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	out := make([]svc, len(tester.Services))
+	for i, x := range tester.Services {
+		out[i] = svc{x.ID, x.Name}
+	}
+	writeJSON(w, map[string]any{"services": out, "defaultIpSources": tester.DefaultIPSources()})
+}
+
+// startTest tests the nodes with the given keys (all nodes when empty).
+func (s *Server) startTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Keys     []string `json:"keys"`
+		IP       bool     `json:"ip"`
+		Services bool     `json:"services"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	all, err := s.st.AllNodes()
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	nodes := all
+	if len(in.Keys) > 0 {
+		want := map[string]bool{}
+		for _, k := range in.Keys {
+			want[k] = true
+		}
+		nodes = nodes[:0:0]
+		for _, n := range all {
+			if want[n.Key()] {
+				nodes = append(nodes, n)
+			}
+		}
+	}
+	if len(nodes) == 0 {
+		writeErr(w, http.StatusBadRequest, "没有可测试的节点")
+		return
+	}
+	job, err := s.tests.Start(nodes, tester.Checks{IP: in.IP, Services: in.Services}, false)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, tester.ErrBusy) {
+			code = http.StatusConflict
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	writeJSON(w, job)
+}
+
+// template builds the starter profile, shaping per-country groups from the current nodes.
+func (s *Server) template(w http.ResponseWriter, _ *http.Request) {
+	all, err := s.st.AllNodes()
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	counts, selfHosted := map[string]int{}, 0
+	for _, n := range all {
+		switch {
+		case node.IsInfo(n):
+		case n.SelfHosted:
+			selfHosted++
+		default:
+			counts[node.Region(n)]++
+		}
+	}
+	writeJSON(w, profile.Default(counts, selfHosted))
+}
+
+// testNode tests one node synchronously and returns its result.
+func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Key      string `json:"key"`
+		IP       bool   `json:"ip"`
+		Services bool   `json:"services"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	all, err := s.st.AllNodes()
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	var target *node.Node
+	for _, n := range all {
+		if n.Key() == in.Key && !node.IsInfo(n) {
+			target = n
+			break
+		}
+	}
+	if target == nil {
+		writeErr(w, http.StatusNotFound, "节点不存在，或是机场信息节点")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	writeJSON(w, s.tests.TestOne(ctx, target, tester.Checks{IP: in.IP, Services: in.Services}))
+}
+
+// subscriptionURLs lists the URLs of the enabled URL sources a profile uses.
+func (s *Server) subscriptionURLs(p *profile.Profile) []string {
+	srcs, err := s.st.ListSources()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, src := range srcs {
+		if src.Kind == "url" && src.Enabled && (len(p.Sources) == 0 || contains(p.Sources, src.ID)) {
+			out = append(out, src.URL)
+		}
+	}
+	return out
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Ban, RotateCcw, History, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Ban, RotateCcw, History, ExternalLink, Download } from "lucide-react";
 import { api, formatTime, installURL, subURL, type Access, type Capabilities, type Profile, type Token } from "../api";
 import { Badge, Button, Card, CopyButton, Empty, ErrorText, Field, Input, Modal, PageHeader, Select } from "../components/ui";
 import { TargetPicker } from "./PreviewPanel";
@@ -41,6 +41,7 @@ export default function TokensPage() {
   return (
     <>
       <PageHeader
+        sticky
         title="订阅链接"
         desc="每个链接绑定一份配置与目标客户端版本。客户端通过链接导入后会按间隔自动更新。"
         actions={<Button variant="primary" disabled={!profiles.length} onClick={() => setCreating(true)}><Plus size={16} /> 新建链接</Button>}
@@ -63,6 +64,10 @@ export default function TokensPage() {
                 <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs">{subURL(t.token)}</code>
                 <CopyButton text={subURL(t.token)} />
                 <a href={installURL(t)}><Button size="sm"><ExternalLink size={14} /> 导入到 {t.target.client === "surge" ? "Surge" : "Stash"}</Button></a>
+                {/* The subscription response is served as an attachment; it keeps the managed URL, so an imported file still updates. */}
+                <a href={subURL(t.token)} download title="下载配置文件，在 App 中手动导入；文件里带订阅地址，导入后仍会自动更新。下载计入一次访问。">
+                  <Button size="sm"><Download size={14} /> 下载</Button>
+                </a>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
                 <span>过期 {t.expiresAt ? formatTime(t.expiresAt) : "永不"}</span>

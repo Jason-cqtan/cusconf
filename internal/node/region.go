@@ -159,3 +159,13 @@ func Region(n *Node) string {
 	}
 	return flag
 }
+
+// RegionName returns the Chinese name of a region code, or the code itself when unknown.
+func RegionName(code string) string {
+	for _, r := range Regions {
+		if r.Code == code {
+			return r.Name
+		}
+	}
+	return code
+}

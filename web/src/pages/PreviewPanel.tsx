@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 import { api, type Capabilities, type Client, type Profile, type RenderResult, type Target } from "../api";
 import { Button, CopyButton, ErrorText, Field, Input, Select } from "../components/ui";
 
@@ -42,12 +42,32 @@ export default function PreviewPanel({ profile, caps }: { profile: Profile; caps
   useEffect(() => { run(); }, [target]);
 
   const warnings = res?.warnings ?? [];
+  const ext = target.client === "stash" ? "yaml" : "conf";
+  const platform = caps?.clients[target.client]?.platforms[target.platform]?.label ?? `${target.client} ${target.platform}`;
+  const fileName = `${profile.name || "cusconf"} - ${platform}${target.version ? ` ${target.version}` : ""}.${ext}`;
+  // Saves the generated text as a file, for importing into the app by hand.
+  const download = () => {
+    if (!res) return;
+    const url = URL.createObjectURL(new Blob([res.content], { type: ext === "yaml" ? "text/yaml" : "text/plain" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1"><TargetPicker value={target} onChange={setTarget} caps={caps} /></div>
         <Button onClick={run} disabled={busy}>{busy ? "生成中…" : "重新生成"}</Button>
+        <Button variant="primary" onClick={download} disabled={!res || busy} title={fileName}><Download size={16} /> 下载配置文件</Button>
       </div>
+      {res && (
+        <p className="text-xs text-zinc-500">
+          下载的文件按当前编辑内容（含未保存的修改）生成，可在 {target.client === "stash" ? "Stash" : "Surge"} 中手动导入；它不带订阅地址，不会自动更新。
+          需要自动更新请在「订阅链接」页创建链接后导入或下载。
+        </p>
+      )}
       <ErrorText error={err} />
       {warnings.length > 0 && (
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-900 dark:text-amber-200">

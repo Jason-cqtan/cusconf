@@ -60,11 +60,14 @@ func (o *om) force(k string, v any) { *o = append(*o, kv{k, v}) }
 func (o om) MarshalYAML() (any, error) {
 	n := &yaml.Node{Kind: yaml.MappingNode}
 	for _, e := range o {
-		var vn yaml.Node
-		if err := vn.Encode(e.v); err != nil {
-			return nil, err
+		vn, ok := e.v.(*yaml.Node) // used as is, so its comments survive
+		if !ok {
+			vn = &yaml.Node{}
+			if err := vn.Encode(e.v); err != nil {
+				return nil, err
+			}
 		}
-		n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: e.k}, &vn)
+		n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: e.k}, vn)
 	}
 	return n, nil
 }
@@ -121,9 +124,11 @@ func Render(c *render.Config) render.Result {
 
 	providers := om{}
 	var rules []string
+	var comments []string // per rule, YAML head comment
 	hasFinal := false
 	used := map[string]bool{}
 	for _, r := range c.Rules {
+		n := len(rules)
 		switch r.Type {
 		case "FINAL", "MATCH":
 			hasFinal = true
@@ -155,6 +160,9 @@ func Render(c *render.Config) render.Result {
 			}
 			rules = append(rules, line)
 		}
+		if len(rules) > n {
+			comments = append(comments, headComment(r.CommentLines()))
+		}
 	}
 	if !hasFinal {
 		final := "DIRECT"
@@ -163,11 +171,12 @@ func Render(c *render.Config) render.Result {
 		}
 		w.Add("rule", "MATCH", "no final rule; added MATCH,%s", final)
 		rules = append(rules, "MATCH,"+final)
+		comments = append(comments, "")
 	}
 	if len(providers) > 0 {
 		root.force("rule-providers", providers)
 	}
-	root.force("rules", rules)
+	root.force("rules", ruleList(rules, comments))
 
 	if extra := strings.TrimSpace(g.Extra["stash"]); extra != "" {
 		if err := mergeExtra(&root, extra); err != nil {
@@ -518,7 +527,7 @@ func convertHosts(hs []profile.Host, w *render.Warnings) (hosts, policy om) {
 			if _, ok := ips[h.Domain]; !ok {
 				order = append(order, h.Domain)
 			}
-			ips[h.Domain] = append(ips[h.Domain], h.Value)
+			ips[h.Domain] = append(ips[h.Domain], h.IPs()...)
 		case "server":
 			srv := strings.TrimPrefix(h.Value, "server:")
 			if srv == "system" {
@@ -582,4 +591,20 @@ func mergeInto(dst *om, m *yaml.Node) {
 			(*dst)[idx].v = v
 		}
 	}
+}
+
+func headComment(lines []string) string {
+	for i, l := range lines {
+		lines[i] = "# " + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ruleList is the rules sequence, with each rule's comment above it.
+func ruleList(rules, comments []string) *yaml.Node {
+	n := &yaml.Node{Kind: yaml.SequenceNode}
+	for i, r := range rules {
+		n.Content = append(n.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: r, HeadComment: comments[i]})
+	}
+	return n
 }

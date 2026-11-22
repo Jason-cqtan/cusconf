@@ -64,6 +64,8 @@ clients:
 
       rule.rule-set: {}
       rule.domain-set: {}
+      # RULE-SET:url / DOMAIN-SET:url as [Host] keys (manual: dns/local-dns-mapping).
+      host.rule-set: {mac: "5.10.0", ios: "5.0.0", verified: false}
 
   stash:
     # Stash version numbers are app versions: iOS/tvOS 3.x, macOS 4.x.

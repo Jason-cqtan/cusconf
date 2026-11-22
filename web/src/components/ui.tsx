@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes } from "react";
 import { X, Check, Copy } from "lucide-react";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -163,9 +163,22 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 p-8 text-center text-sm text-zinc-500">{children}</div>;
 }
 
-export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: ReactNode }) {
+/**
+ * Pinned to the top of <main> while the page scrolls. Sticky offsets count from <main>'s
+ * content edge, so the negative top / margins cancel its padding: the bar covers the full
+ * width and nothing shows above it.
+ */
+export function StickyBar({ children, className, barRef }: { children: ReactNode; className?: string; barRef?: Ref<HTMLDivElement> }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div ref={barRef} className={cx("sticky -top-4 z-30 -mx-4 -mt-4 md:-top-8 bg-zinc-50 px-4 pt-4 md:-mx-8 md:-mt-8 md:px-8 md:pt-8 dark:bg-zinc-950", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function PageHeader({ title, desc, actions, sticky }: { title: string; desc?: string; actions?: ReactNode; sticky?: boolean }) {
+  const head = (
+    <div className={cx("flex flex-wrap items-end justify-between gap-3", sticky ? "pb-4" : "mb-5")}>
       <div>
         <h1 className="text-xl font-semibold">{title}</h1>
         {desc && <p className="mt-1 text-sm text-zinc-500">{desc}</p>}
@@ -173,6 +186,24 @@ export function PageHeader({ title, desc, actions }: { title: string; desc?: str
       <div className="flex gap-2">{actions}</div>
     </div>
   );
+  return sticky ? <StickyBar className="mb-4 border-b border-zinc-200 dark:border-zinc-800">{head}</StickyBar> : head;
+}
+
+/**
+ * Briefly highlights a newly added row. `flash(id)` marks it; the element carrying
+ * `data-flash={id}` is scrolled into view and blinks (see .flash-row in index.css).
+ */
+export function useFlash(): [string | null, (id: string) => void] {
+  const [id, setId] = useState<string | null>(null);
+  const t = useRef<number>(0);
+  useEffect(() => {
+    if (!id) return;
+    const raf = requestAnimationFrame(() => document.querySelector(`[data-flash="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    clearTimeout(t.current);
+    t.current = window.setTimeout(() => setId(null), 2400);
+    return () => cancelAnimationFrame(raf);
+  }, [id]);
+  return [id, setId];
 }
 
 export function ErrorText({ error }: { error?: string | null }) {

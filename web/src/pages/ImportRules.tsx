@@ -27,15 +27,26 @@ interface ParseResult {
  * Parses Surge / Clash style rule lines:
  *   TYPE,VALUE,POLICY[,no-resolve][,other options]
  *   FINAL,POLICY  /  MATCH,POLICY
- * Accepts YAML list items ("- DOMAIN,..."), and skips comments, blank lines and [Section] headers.
+ * Accepts YAML list items ("- DOMAIN,..."), and skips blank lines and [Section] headers.
+ * Comment lines ("# …") are kept as the comment of the rule that follows them.
  */
 export function parseRules(text: string): ParseResult {
   const items: Parsed[] = [];
   const errors: ParseResult["errors"] = [];
+  let note: string[] = [];
+  // Attaches the pending comment lines to the rule.
+  const push = (p: Parsed) => {
+    if (note.length) p.rule = { ...p.rule, comment: note.join("\n") };
+    note = [];
+    items.push(p);
+  };
   text.split(/\r?\n/).forEach((raw, idx) => {
     const line = idx + 1;
     let t = raw.trim().replace(/^-\s+/, "").replace(/^['"]|['"]$/g, "");
-    if (!t || /^(#|\/\/|;)/.test(t) || /^\[.*\]$/.test(t)) return;
+    const c = t.match(/^(?:#|\/\/|;)\s*(.*)$/);
+    if (c) { if (c[1].trim()) note.push(c[1].trim()); return; }
+    if (!t) return;
+    if (/^\[.*\]$/.test(t)) { note = []; return; }
     t = t.replace(/\s+(#|\/\/).*$/, ""); // trailing comment
     const parts = t.split(",").map((x) => x.trim());
     let type = parts[0].toUpperCase();
@@ -46,7 +57,7 @@ export function parseRules(text: string): ParseResult {
     }
     if (type === "FINAL") {
       if (!parts[1]) return void errors.push({ line, text: raw.trim(), reason: "缺少策略" });
-      items.push({ line, rule: { type, value: "", policy: parts[1] } });
+      push({ line, rule: { type, value: "", policy: parts[1] } });
       return;
     }
     if (parts.length < 3 || !parts[1] || !parts[2]) {
@@ -54,21 +65,23 @@ export function parseRules(text: string): ParseResult {
       return;
     }
     const opts = parts.slice(3).map((o) => o.toLowerCase());
-    const rule: Rule = { type, value: parts[1], policy: parts[2], noResolve: opts.includes("no-resolve") || undefined };
+    // Domains pasted as links ("http://example.com") lose the scheme and path.
+    const value = type.startsWith("DOMAIN") && type !== "DOMAIN-SET" ? parts[1].replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "") : parts[1];
+    const rule: Rule = { type, value, policy: parts[2], noResolve: opts.includes("no-resolve") || undefined };
     if (type === "RULE-SET" || type === "DOMAIN-SET") {
       if (!/^https?:\/\//i.test(parts[1])) {
         // A rule-set name; it must already exist in the profile (checked by the caller).
-        items.push({ line, rule: { ...rule, type: "RULE-SET" } });
+        push({ line, rule: { ...rule, type: "RULE-SET" } });
         return;
       }
       const url = parts[1];
       const name = decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() ?? "rules").replace(/\.(list|txt|yaml|yml|conf)$/i, "") || "rules";
       const behavior = type === "DOMAIN-SET" ? "domain" : "classical";
       const newSet: RuleSet = { name, behavior, surgeUrl: url, stashUrl: url, stashFormat: /\.ya?ml$/i.test(url.split(/[?#]/)[0]) ? "yaml" : "text", interval: 86400 };
-      items.push({ line, rule: { ...rule, type: "RULE-SET", value: name }, newSet });
+      push({ line, rule: { ...rule, type: "RULE-SET", value: name }, newSet });
       return;
     }
-    items.push({ line, rule });
+    push({ line, rule });
   });
   return { items, errors };
 }
@@ -145,7 +158,7 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
       }
     >
       <div className="space-y-4">
-        <Field label="粘贴规则" hint="每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]。# 开头的注释行会被忽略。">
+        <Field label="粘贴规则" hint="每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]。# 开头的注释行会作为下一条规则的备注保留，并写入生成的配置。">
           <Textarea
             rows={8}
             autoFocus

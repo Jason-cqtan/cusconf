@@ -23,6 +23,7 @@ function ProfileList({ go }: { go: (p: string) => void }) {
   return (
     <>
       <PageHeader
+        sticky
         title="配置"
         desc="策略组、规则与规则集。同一份配置可以为不同客户端、不同版本生成订阅链接。"
         actions={<Button variant="primary" onClick={() => go("profiles/new")}><Plus size={16} /> 新建配置</Button>}

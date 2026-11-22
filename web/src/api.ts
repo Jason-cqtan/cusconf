@@ -13,6 +13,8 @@ export interface Node {
   key: string;
   region: string;
   info?: boolean;
+  selfHosted?: boolean;
+  probe?: Probe;
   cipher?: string;
   plugin?: string;
   flow?: string;
@@ -32,6 +34,7 @@ export interface Source {
   content?: string;
   refreshInterval: number;
   enabled: boolean;
+  selfHosted?: boolean;
   fetchedAt?: number;
   lastError?: string;
   nodeCount: number;
@@ -44,10 +47,68 @@ export interface Filter {
   include?: string;
   exclude?: string;
   regions?: string[];
+  excludeRegions?: string[];
+  nodeKind?: "" | "airport" | "selfhosted";
   types?: string[];
   sources?: string[];
   names?: string[];
+  reachable?: boolean;
+  maxLatency?: number;
+  minScores?: Record<string, number> | null;
+  exitRegions?: string[];
+  unlocks?: string[];
+  excludeFlags?: string[];
 }
+
+export interface Probe {
+  latency: number;
+  testedAt: number;
+  exitCountry?: string;
+  scores?: Record<string, number>;
+  unlocked?: string[];
+  partial?: string[];
+  flags?: string[];
+}
+
+export type ServiceStatus = "yes" | "partial" | "no" | "unknown" | "error";
+export interface ServiceResult { status: ServiceStatus; region?: string; note?: string }
+export interface IPReport { source: string; ip?: string; country?: string; city?: string; isp?: string; asn?: string; score?: number; flags?: string[]; error?: string }
+export interface TestResult {
+  key: string;
+  name: string;
+  testedAt: number;
+  latency: number;
+  error?: string;
+  warning?: string;
+  exit?: { ip?: string; country?: string; city?: string; isp?: string; asn?: string; scores?: Record<string, number>; flags?: string[] };
+  reports?: IPReport[];
+  services?: Record<string, ServiceResult>;
+}
+export interface IPSource {
+  name: string;
+  enabled: boolean;
+  url: string;
+  headers?: Record<string, string>;
+  ip?: string;
+  country?: string;
+  city?: string;
+  isp?: string;
+  asn?: string;
+  score?: string;
+  scoreScale?: number;
+  higherIsSafer?: boolean; // fixed by the server for built-in sources
+  flags?: Record<string, string>;
+}
+export interface TestSettings {
+  concurrency: number;
+  timeoutSec: number;
+  latencyUrl: string;
+  ipSources: IPSource[];
+  services: string[];
+  scheduleHours: number;
+  sources?: string[] | null;
+}
+export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean } }
 
 export type GroupType = "select" | "url-test" | "fallback" | "load-balance" | "smart";
 
@@ -57,6 +118,8 @@ export interface Group {
   icon?: string;
   members?: string[];
   nodes?: Filter | null;
+  /** Expands member groups into their nodes that match this filter. */
+  memberFilter?: Filter | null;
   order?: string[];
   url?: string;
   interval?: number;
@@ -67,7 +130,7 @@ export interface Group {
   category?: string;
 }
 
-export interface Rule { type: string; value: string; policy: string; noResolve?: boolean }
+export interface Rule { type: string; value: string; policy: string; noResolve?: boolean; /** Written as "# …" above the rule. */ comment?: string }
 
 export interface RuleSet {
   name: string;
@@ -78,7 +141,7 @@ export interface RuleSet {
   interval?: number;
 }
 
-export interface Host { domain: string; value: string }
+export interface Host { domain: string; value: string; /** Written as "# …" above the entry. */ comment?: string }
 
 export interface General {
   testUrl?: string;
@@ -89,6 +152,9 @@ export interface General {
   updateInterval?: number;
   extra?: Record<string, string>;
   hosts?: Host[] | null;
+  disableServerDirect?: boolean;
+  /** Resolves node server / subscription domains with this DNS (generated [Host] entries). */
+  serverDns?: string;
 }
 
 export interface Profile {
@@ -183,7 +249,16 @@ export const api = {
   saveProfile: (p: Profile) => p.id ? req<Profile>("PUT", `/profiles/${p.id}`, p) : req<Profile>("POST", "/profiles", p),
   deleteProfile: (id: string) => req<void>("DELETE", `/profiles/${id}`),
   preview: (profile: Profile, target: Target) => req<RenderResult>("POST", "/preview", { profile, target }),
-  resolve: (profile: Profile) => req<{ nodes: Node[]; members: Record<string, string[]>; warnings: Warning[] | null }>("POST", "/resolve", profile),
+  resolve: (profile: Profile) => req<{ nodes: Node[]; scopeNodes: Node[]; members: Record<string, string[]>; warnings: Warning[] | null }>("POST", "/resolve", profile),
+
+  testSettings: () => req<TestSettings>("GET", "/tests/settings"),
+  saveTestSettings: (s: TestSettings) => req<TestSettings>("PUT", "/tests/settings", s),
+  testServices: () => req<{ services: { id: string; name: string }[]; defaultIpSources: IPSource[] }>("GET", "/tests/services"),
+  testResults: () => req<Record<string, TestResult>>("GET", "/tests/results"),
+  testJob: () => req<TestJob>("GET", "/tests/job"),
+  startTest: (keys: string[], ip: boolean, services: boolean) => req<TestJob>("POST", "/tests/job", { keys, ip, services }),
+  stopTest: () => req<TestJob>("DELETE", "/tests/job"),
+  testNode: (key: string, ip = true, services = true) => req<TestResult>("POST", "/tests/node", { key, ip, services }),
 
   tokens: () => req<Token[]>("GET", "/tokens"),
   saveToken: (t: Partial<Token>) => t.token ? req<Token>("PUT", `/tokens/${t.token}`, t) : req<Token>("POST", "/tokens", t),

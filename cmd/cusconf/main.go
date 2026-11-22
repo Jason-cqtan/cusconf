@@ -16,6 +16,7 @@ import (
 	"github.com/cusconf/cusconf/internal/api"
 	"github.com/cusconf/cusconf/internal/source"
 	"github.com/cusconf/cusconf/internal/store"
+	"github.com/cusconf/cusconf/internal/tester"
 	"github.com/cusconf/cusconf/web"
 )
 
@@ -38,7 +39,8 @@ func main() {
 	if err != nil {
 		fatal("web assets", err)
 	}
-	srv, err := api.New(st, mgr, dist)
+	tests := tester.NewManager(st)
+	srv, err := api.New(st, mgr, tests, dist)
 	if err != nil {
 		fatal("init api", err)
 	}
@@ -46,6 +48,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go mgr.Run(ctx)
+	go tests.RunSchedule(ctx, st.AllNodes)
 
 	hs := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

@@ -1,20 +1,15 @@
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, ImageOff } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ChevronRight, Plus, Trash2, ImageOff, LayoutTemplate, X } from "lucide-react";
 import type { Group, GroupType } from "../api";
-import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx } from "../components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx, useFlash } from "../components/ui";
 import { SortableList } from "../components/Sortable";
 import { FilterEditor } from "./FilterEditor";
 import { SortableChips } from "../components/SortableChips";
 import { MultiSelect } from "../components/MultiSelect";
 import { uid, type EditableGroup, type EditableProfile, type EditorCtx } from "./ProfileEditor";
-
-const ICON_BASE = "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/";
-const presetIcons = [
-  "Proxy", "Auto", "Available", "Static", "Final", "Direct", "Reject", "Advertising", "Global", "China",
-  "Hong_Kong", "Taiwan", "Japan", "Singapore", "United_States", "Korea", "United_Kingdom", "Germany", "Russia", "India",
-  "ChatGPT", "Netflix", "YouTube", "Disney+", "Spotify", "TikTok", "Telegram", "Twitter", "Google_Search", "Apple",
-  "Microsoft", "GitHub", "Steam", "Speedtest", "Bilibili", "HBO", "Prime_Video", "Hulu", "Streaming", "Game",
-];
+import { builtinIconSources, customIconSource, loadIcons, prefs, type Icon } from "./iconSources";
+import { addTemplates, groupTemplates, insertIndex, type GroupTemplate } from "./groupTemplates";
 
 export const groupTypes: { value: GroupType; label: string; hint: string }[] = [
   { value: "select", label: "手动选择 select", hint: "在客户端中手动切换" },
@@ -30,8 +25,10 @@ const typeColor: Record<GroupType, "zinc" | "indigo" | "green" | "amber"> = {
 
 type G = EditableGroup;
 
-export default function GroupsEditor({ profile: p, update, ctx }: { profile: EditableProfile; update: (f: (p: EditableProfile) => EditableProfile) => void; ctx: EditorCtx }) {
+export default function GroupsEditor({ profile: p, update, ctx, toolbar }: { profile: EditableProfile; update: (f: (p: EditableProfile) => EditableProfile) => void; ctx: EditorCtx; toolbar: HTMLElement | null }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [flashId, flash] = useFlash();
 
   const setGroups = (groups: G[]) => update((o) => ({ ...o, groups }));
   const patch = (i: number, g: Partial<G>) => {
@@ -85,13 +82,28 @@ export default function GroupsEditor({ profile: p, update, ctx }: { profile: Edi
     let n = 1;
     while (p.groups.some((g) => g.name === `新策略组 ${n}`)) n++;
     const g: G = { name: `新策略组 ${n}`, type: "select", members: [], nodes: {}, _uid: uid() };
-    setGroups([...p.groups, g]);
+    const at = insertIndex(p.groups);
+    setGroups([...p.groups.slice(0, at), g, ...p.groups.slice(at)]);
     setOpen(g._uid!);
+    flash(g._uid!);
+  };
+  const addFromTemplates = (picked: GroupTemplate[]) => {
+    const [next, ids] = addTemplates(p, picked);
+    update(() => next);
+    if (ids[0]) flash(ids[0]);
   };
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-zinc-500">拖动排序。第一个策略组通常作为主选择；Surge 中的顺序即客户端显示顺序。</p>
+      {toolbar && createPortal(
+        <>
+          <Button size="sm" variant="primary" onClick={add}><Plus size={14} /> 添加策略组</Button>
+          <Button size="sm" onClick={() => setPicking(true)}><LayoutTemplate size={14} /> 从模板添加</Button>
+          <span className="text-xs text-zinc-500">拖动排序。新策略组添加在预置组之后、节点分组之前；Surge 中的顺序即客户端显示顺序。</span>
+        </>,
+        toolbar,
+      )}
+      <TemplatePicker open={picking} onClose={() => setPicking(false)} existing={p.groups.map((g) => g.name)} onAdd={addFromTemplates} />
       <SortableList
         items={p.groups}
         ids={p.groups.map((g) => g._uid!)}
@@ -99,6 +111,7 @@ export default function GroupsEditor({ profile: p, update, ctx }: { profile: Edi
         render={(g, i, handle) => (
           <GroupCard
             g={g}
+            flashing={flashId === g._uid}
             handle={handle}
             expanded={open === g._uid}
             onToggle={() => setOpen(open === g._uid ? null : g._uid!)}
@@ -111,13 +124,12 @@ export default function GroupsEditor({ profile: p, update, ctx }: { profile: Edi
           />
         )}
       />
-      <Button onClick={add}><Plus size={16} /> 添加策略组</Button>
     </div>
   );
 }
 
-function GroupCard({ g, handle, expanded, onToggle, onChange, onRemove, allGroups, resolved, totalNodes, ctx }: {
-  g: G; handle: React.ReactNode; expanded: boolean; onToggle: () => void; onChange: (g: Partial<Group>) => void; onRemove: () => void;
+function GroupCard({ g, flashing, handle, expanded, onToggle, onChange, onRemove, allGroups, resolved, totalNodes, ctx }: {
+  g: G; flashing: boolean; handle: React.ReactNode; expanded: boolean; onToggle: () => void; onChange: (g: Partial<Group>) => void; onRemove: () => void;
   allGroups: string[]; resolved: string[]; totalNodes: number; ctx: EditorCtx;
 }) {
   const nodeNames = new Set(ctx.nodes.map((n) => n.name));
@@ -141,7 +153,11 @@ function GroupCard({ g, handle, expanded, onToggle, onChange, onRemove, allGroup
 
   return (
     <Card className="mb-2">
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div
+        data-flash={g._uid}
+        className={cx("flex items-center gap-2 rounded-t-lg px-3 py-2", !expanded && "rounded-b-lg", flashing && "flash-row", expanded && "sticky z-20 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900")}
+        style={expanded ? { top: "var(--sticky-h, 0px)" } : undefined}
+      >
         {handle}
         <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onToggle}>
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -157,7 +173,7 @@ function GroupCard({ g, handle, expanded, onToggle, onChange, onRemove, allGroup
         <Button variant="danger" size="sm" onClick={onRemove} aria-label="删除"><Trash2 size={14} /></Button>
       </div>
       {expanded && (
-        <div className="space-y-5 border-t border-zinc-200 dark:border-zinc-800 p-4">
+        <div className="space-y-5 p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="名称"><Input value={g.name} onChange={(e) => onChange({ name: e.target.value })} /></Field>
             <Field label="类型" hint={groupTypes.find((t) => t.value === g.type)?.hint}>
@@ -191,6 +207,23 @@ function GroupCard({ g, handle, expanded, onToggle, onChange, onRemove, allGroup
             options={["DIRECT", "REJECT", ...allGroups.filter((n) => n !== g.name)]}
             smart={g.type === "smart"}
           />
+
+          {(g.memberFilter || members.some((m) => groupSet.has(m))) && (
+            <div className="space-y-3">
+              <Toggle checked={!!g.memberFilter} onChange={(v) => onChange({ memberFilter: v ? {} : null })} label="再筛选包含的策略组中的节点" />
+              {g.memberFilter ? (
+                <div className="rounded-md bg-zinc-50 dark:bg-zinc-950/50 p-3">
+                  <FilterEditor filter={g.memberFilter} onChange={(f) => onChange({ memberFilter: f })} ctx={ctx} showNames={false} probeOpen />
+                  <p className="mt-3 text-xs text-zinc-500">
+                    包含的策略组（如「新加坡」）会展开为其中满足条件的节点，例如只保留可用服务含 Claude 的新加坡节点。
+                    客户端无法在嵌套策略组内筛选，所以生成的配置里直接列出这些节点；DIRECT 和单独选择的节点不受影响。
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500">例如包含「新加坡」，再要求「必须可用的服务」为 Claude。</p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3">
             <Toggle checked={!!g.nodes} onChange={(v) => onChange({ nodes: v ? {} : null })} label="追加匹配条件的节点" />
@@ -236,20 +269,88 @@ function IconField({ value, onChange }: { value?: string; onChange: (v: string) 
         <Button type="button" className="h-9 w-9 shrink-0 p-0" onClick={() => setOpen(true)}><GroupIcon url={value} /></Button>
         <Input className="font-mono text-xs" value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder="图标 URL" />
       </div>
-      <Modal open={open} onClose={() => setOpen(false)} title="选择图标">
-        <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
-          {presetIcons.map((n) => {
-            const url = `${ICON_BASE}${n}.png`;
-            return (
-              <button key={n} title={n} className={cx("rounded-md border p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800", value === url ? "border-indigo-500" : "border-transparent")} onClick={() => { onChange(url); setOpen(false); }}>
-                <img src={url} alt={n} className="h-8 w-8" loading="lazy" />
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-xs text-zinc-500">图标来自 Koolson/Qure，也可以填写任意图片 URL。</p>
-      </Modal>
+      {open && <IconPicker value={value} onPick={(url) => { onChange(url); setOpen(false); }} onClose={() => setOpen(false)} />}
     </Field>
+  );
+}
+
+function IconPicker({ value, onPick, onClose }: { value?: string; onPick: (url: string) => void; onClose: () => void }) {
+  const [custom, setCustom] = useState(prefs.custom);
+  const sources = [...builtinIconSources, ...custom.map(customIconSource)];
+  const [srcId, setSrcId] = useState(() => (sources.some((s) => s.id === prefs.last()) ? prefs.last() : sources[0].id));
+  const src = sources.find((s) => s.id === srcId) ?? sources[0];
+  const [icons, setIcons] = useState<Icon[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState("");
+
+  useEffect(() => {
+    let live = true;
+    setIcons(null);
+    setErr(null);
+    loadIcons(src).then((v) => live && setIcons(v)).catch((e) => live && setErr((e as Error).message));
+    return () => { live = false; };
+  }, [src.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const choose = (id: string) => { setSrcId(id); prefs.setLast(id); };
+  const addCustom = () => {
+    const url = adding.trim();
+    if (!/^https?:\/\//.test(url)) return;
+    const next = custom.includes(url) ? custom : [...custom, url];
+    setCustom(next);
+    prefs.setCustom(next);
+    setAdding("");
+    choose(`custom:${url}`);
+  };
+  const removeCustom = (url: string) => {
+    const next = custom.filter((u) => u !== url);
+    setCustom(next);
+    prefs.setCustom(next);
+    if (srcId === `custom:${url}`) choose(builtinIconSources[0].id);
+  };
+  const k = q.trim().toLowerCase();
+  const shown = (icons ?? []).filter((i) => !k || i.name.toLowerCase().includes(k));
+
+  return (
+    <Modal open onClose={onClose} title="选择图标" wide>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {sources.map((s) => (
+            <span key={s.id} className="inline-flex">
+              <Button size="sm" variant={s.id === src.id ? "primary" : "secondary"} onClick={() => choose(s.id)} className={s.id.startsWith("custom:") ? "rounded-r-none" : undefined}>{s.name}</Button>
+              {s.id.startsWith("custom:") && (
+                <Button size="sm" variant={s.id === src.id ? "primary" : "secondary"} className="rounded-l-none border-l-0 px-1.5" aria-label="移除此图标源" title="移除此图标源" onClick={() => removeCustom(s.id.slice(7))}><X size={12} /></Button>
+              )}
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Input className="h-8 w-full text-xs sm:w-56" placeholder="搜索图标名称，如 claude、hong" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+          <div className="flex min-w-0 flex-1 gap-2">
+            <Input className="h-8 min-w-0 font-mono text-xs" placeholder="添加图标订阅 JSON 地址（QuanX / Loon / Stash 格式）" value={adding} onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustom()} />
+            <Button size="sm" className="h-8 shrink-0" disabled={!/^https?:\/\//.test(adding.trim())} onClick={addCustom}><Plus size={14} /> 添加源</Button>
+          </div>
+        </div>
+        {err ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">加载失败：{err}</p>
+          : !icons ? <p className="py-8 text-center text-sm text-zinc-500">加载中…</p>
+          : shown.length === 0 ? <p className="py-8 text-center text-sm text-zinc-500">没有匹配的图标</p>
+          : (
+            <div className="grid max-h-[50vh] grid-cols-6 gap-1 overflow-y-auto sm:grid-cols-10">
+              {shown.map((i) => (
+                <button key={i.url} title={i.name} onClick={() => onPick(i.url)}
+                  className={cx("flex flex-col items-center gap-1 rounded-md border p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800", value === i.url ? "border-indigo-500" : "border-transparent")}>
+                  <img src={i.url} alt="" className="h-8 w-8 object-contain" loading="lazy" />
+                  <span className="w-full truncate text-[10px] text-zinc-500">{i.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        <p className="text-xs text-zinc-500">
+          {icons && `${shown.length} / ${icons.length} 个图标 · `}来源 {src.home ? <a className="text-indigo-600 hover:underline" href={src.home} target="_blank" rel="noreferrer">{src.home.replace(/^https?:\/\/(github\.com\/)?/, "")}</a> : src.name}。
+          也可以在输入框中直接填写任意图片 URL；自定义图标源只保存在当前浏览器。
+        </p>
+      </div>
+    </Modal>
   );
 }
 
@@ -291,4 +392,41 @@ function applyRelative(list: string[], subset: string[]): string[] {
   const set = new Set(subset);
   let k = 0;
   return list.map((x) => (set.has(x) ? subset[k++] : x));
+}
+
+function TemplatePicker({ open, onClose, existing, onAdd }: { open: boolean; onClose: () => void; existing: string[]; onAdd: (t: GroupTemplate[]) => void }) {
+  const [sel, setSel] = useState<string[]>([]);
+  const close = () => { setSel([]); onClose(); };
+  const all = groupTemplates.flatMap((c) => c.items);
+  return (
+    <Modal open={open} onClose={close} title="从模板添加策略组" wide
+      footer={<><Button onClick={close}>取消</Button><Button variant="primary" disabled={!sel.length} onClick={() => { onAdd(all.filter((t) => sel.includes(t.name))); close(); }}>添加 {sel.length || ""}</Button></>}>
+      <div className="space-y-4">
+        {groupTemplates.map((c) => (
+          <div key={c.category}>
+            <div className="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">{c.category}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {c.items.map((t) => {
+                const has = existing.includes(t.name);
+                const on = sel.includes(t.name);
+                return (
+                  <button key={t.name} type="button" disabled={has} title={has ? "已存在同名策略组" : undefined}
+                    onClick={() => setSel((cur) => (on ? cur.filter((x) => x !== t.name) : [...cur, t.name]))}
+                    className={cx("inline-flex items-center gap-1.5 rounded-full border py-0.5 pr-2.5 pl-1 text-xs disabled:opacity-40",
+                      on ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800")}>
+                    <img src={t.icon} alt="" className="h-4 w-4 rounded" loading="lazy" />
+                    {t.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-zinc-500">
+          每个模板会添加一个手动选择的策略组（成员为各国家分组），同时添加对应的规则集（优先 ACL4SSR，没有时用 blackmatrix7）；
+          已有指向该规则集的规则会改用新策略组，没有则插入到 GEOIP / FINAL 等兜底规则之前。
+        </p>
+      </div>
+    </Modal>
+  );
 }

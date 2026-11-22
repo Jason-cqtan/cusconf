@@ -118,8 +118,10 @@ type Node struct {
 	WireGuard *WireGuardOpts `json:"wireguard,omitempty"`
 
 	// Metadata (not part of the endpoint definition).
-	Source string   `json:"source,omitempty"` // source id
-	Tags   []string `json:"tags,omitempty"`
+	Source     string   `json:"source,omitempty"`     // source id
+	SelfHosted bool     `json:"selfHosted,omitempty"` // from a self-hosted source
+	Tags       []string `json:"tags,omitempty"`
+	Probe      *Probe   `json:"probe,omitempty"` // latest test result summary
 }
 
 // Key returns a stable identity hash of the endpoint (ignores name/metadata),
@@ -187,3 +189,15 @@ func (n *Node) Validate() error {
 }
 
 func BoolPtr(b bool) *bool { return &b }
+
+// Probe is the latest test summary for a node. It is attached when nodes are
+// loaded for filtering and display, and is not part of the stored node.
+type Probe struct {
+	Latency     int                `json:"latency"` // ms; 0 = unreachable
+	TestedAt    int64              `json:"testedAt"`
+	ExitCountry string             `json:"exitCountry,omitempty"`
+	Scores      map[string]float64 `json:"scores,omitempty"`   // exit IP safety 0–100 per source, higher is safer
+	Unlocked    []string           `json:"unlocked,omitempty"` // service IDs fully available
+	Partial     []string           `json:"partial,omitempty"`  // service IDs partially available
+	Flags       []string           `json:"flags,omitempty"`    // exit IP labels, e.g. 机房, 滥用
+}
