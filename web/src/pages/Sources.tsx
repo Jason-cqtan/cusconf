@@ -52,6 +52,7 @@ export default function SourcesPage() {
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
                     <span>{s.nodeCount} {tr("个节点")}</span>
                     <span>{tr("更新于")} {formatTime(s.fetchedAt)}</span>
+                    {!!s.syncedAt && <span title={tr("本机拉取失败时，使用其它 cusconf 推送来的节点")}>{tr("节点同步于")} {formatTime(s.syncedAt)}</span>}
                     {s.info && s.info.total > 0 && (
                       <span>{tr("流量")} {formatBytes(s.info.upload + s.info.download)} / {formatBytes(s.info.total)}</span>
                     )}

@@ -37,6 +37,8 @@ export interface Source {
   selfHosted?: boolean;
   fetchedAt?: number;
   lastError?: string;
+  /** When another cusconf last pushed this source's nodes. */
+  syncedAt?: number;
   nodeCount: number;
   format?: string;
   info?: SubInfo;
@@ -110,9 +112,9 @@ export interface TestSettings {
   scheduleHours: number;
   sources?: string[] | null;
   /** Push results to another cusconf (e.g. a server that cannot reach some nodes). */
-  sync?: { url?: string; key?: string; auto?: boolean };
+  sync?: { url?: string; key?: string; auto?: boolean; noNodes?: boolean };
 }
-export interface SyncStatus { at: number; count: number; error?: string }
+export interface SyncStatus { at: number; count: number; sources?: number; error?: string }
 export interface TestJob { running: boolean; total: number; done: number; reachable: number; startedAt?: number; finishedAt?: number; scheduled?: boolean; checks: { ip: boolean; services: boolean }; /** The job could not run, e.g. mihomo is missing. */ error?: string; sync?: SyncStatus | null }
 
 export type GroupType = "select" | "url-test" | "fallback" | "load-balance" | "smart";

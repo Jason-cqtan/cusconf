@@ -23,13 +23,19 @@ func (s *Server) syncImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Results []tester.Result `json:"results"`
+		Results []tester.Result     `json:"results"`
+		Sources []tester.SyncSource `json:"sources"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<20)).Decode(&in); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad body: "+err.Error())
 		return
 	}
-	writeJSON(w, map[string]int{"imported": s.tests.Import(in.Results)})
+	nsrc, err := s.tests.ImportSources(in.Sources)
+	if err != nil {
+		storeErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]int{"imported": s.tests.Import(in.Results), "sources": nsrc})
 }
 
 func (s *Server) syncKey(w http.ResponseWriter, r *http.Request) {

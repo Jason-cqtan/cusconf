@@ -160,6 +160,8 @@ type Source struct {
 	Format    string   `json:"format,omitempty"`
 	Info      *SubInfo `json:"info,omitempty"`
 	Warnings  []string `json:"warnings,omitempty"`
+	// SyncedAt is when another cusconf last pushed this source's nodes (see tester/sync.go).
+	SyncedAt int64 `json:"syncedAt,omitempty"`
 }
 
 func (s *Store) PutSource(v *Source) error            { return put(s, "source", v.ID, v) }

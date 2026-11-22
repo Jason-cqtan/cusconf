@@ -295,11 +295,15 @@ function SyncSettings({ s, set, save }: { s: TestSettings; set: (p: Partial<Test
         </Field>
         <Button disabled={busy || !sync.url || !sync.key} onClick={push}>{busy ? tr("同步中…") : tr("保存并立即推送")}</Button>
       </div>
-      <Toggle checked={!!sync.auto} onChange={(v) => setSync({ auto: v || undefined })} label={tr("每次测试完成后自动推送")} />
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <Toggle checked={!!sync.auto} onChange={(v) => setSync({ auto: v || undefined })} label={tr("每次测试完成后自动推送")} />
+        <Toggle checked={!sync.noNodes} onChange={(v) => setSync({ noNodes: !v || undefined })} label={tr("同时推送订阅源的节点")} />
+      </div>
+      {!sync.noNodes && <p className="text-xs text-zinc-500">{tr("对方拉不到的订阅（如只允许国内 IP 拉取）也能有节点：按订阅地址匹配对方的订阅源，没有就自动创建；对方自己拉取成功且更新时，以对方为准。")}</p>}
       <ErrorText error={err} />
       {status && (status.error
         ? <p className="text-xs text-red-600">{tr("推送失败：")}{trMsg(status.error)}</p>
-        : <p className="text-xs text-emerald-600">{tr("已推送，对方更新了 {0} 条结果（较旧的结果不会覆盖对方更新的数据）", status.count)}</p>)}
+        : <p className="text-xs text-emerald-600">{tr("已推送，对方更新了 {0} 条结果、{1} 个订阅源的节点（较旧的数据不会覆盖对方更新的数据）", status.count, status.sources ?? 0)}</p>)}
       <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
         <Field label={tr("本机的同步密钥")} hint={tr("在推送方填写本机地址和这个密钥。重新生成后，使用旧密钥的推送会失败。")}>
           <div className="flex gap-2">

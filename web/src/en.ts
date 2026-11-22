@@ -1,5 +1,10 @@
 // English UI text, keyed by the Chinese source text (see i18n.ts). Missing keys fall back to Chinese.
 export const en: Record<string, string> = {
+  "同时推送订阅源的节点": "Also push the sources' nodes",
+  "对方拉不到的订阅（如只允许国内 IP 拉取）也能有节点：按订阅地址匹配对方的订阅源，没有就自动创建；对方自己拉取成功且更新时，以对方为准。": "Gives the other side nodes for subscriptions it cannot fetch (e.g. ones that only allow China IPs): sources are matched by subscription URL and created when missing; when the other side fetched a source itself, successfully and more recently, its own copy wins.",
+  "已推送，对方更新了 {0} 条结果、{1} 个订阅源的节点（较旧的数据不会覆盖对方更新的数据）": "Pushed; the other side updated {0} results and the nodes of {1} sources (older data never overwrites newer data there)",
+  "本机拉取失败时，使用其它 cusconf 推送来的节点": "Nodes pushed by another cusconf, used when fetching here fails",
+  "节点同步于": "Nodes synced",
   "来自同步": "synced",
   "同步测试结果": "Sync test results",
   "有些节点只接受中国大陆网络的连接，部署在境外的 cusconf 测不通它们。可以在能连上的地方（如家里的电脑）运行 cusconf 测试，再把结果推送到服务器；服务器本地测试失败时不会覆盖同步来的可用结果。": "Some nodes only accept connections from mainland China networks, so a cusconf hosted abroad cannot test them. Run cusconf where they are reachable (e.g. a computer at home) and push its results to the server; a failed test on the server never overwrites a working synced result.",
@@ -9,7 +14,6 @@ export const en: Record<string, string> = {
   "保存并立即推送": "Save and push now",
   "每次测试完成后自动推送": "Push automatically after every test",
   "推送失败：": "Push failed: ",
-  "已推送，对方更新了 {0} 条结果（较旧的结果不会覆盖对方更新的数据）": "Pushed; the other side updated {0} results (older results never overwrite newer data there)",
   "本机的同步密钥": "This instance's sync key",
   "在推送方填写本机地址和这个密钥。重新生成后，使用旧密钥的推送会失败。": "Enter this instance's URL and this key on the pushing side. After regenerating, pushes with the old key fail.",
   "重新生成同步密钥？使用旧密钥的推送将失败。": "Regenerate the sync key? Pushes with the old key will fail.",
