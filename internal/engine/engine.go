@@ -26,8 +26,9 @@ type Request struct {
 	Nodes      []*node.Node // all nodes from all sources (Source field set)
 	Target     capability.Target
 	ManagedURL string
-	// SubscriptionURLs of all enabled subscription sources; their hosts get DIRECT rules too.
-	SubscriptionURLs []string
+	// Subscriptions maps enabled subscription source IDs to their URLs; the hosts of the
+	// profile's sources get DIRECT rules too.
+	Subscriptions map[string]string
 	// Mirror returns this server's rule set mirror URL (see render.Config.Mirror); optional.
 	Mirror func(upstream, behavior, format string) string
 	// MirrorLocal marks mirror URLs that only work on this machine (the server was
@@ -241,18 +242,19 @@ func Generate(req Request) (render.Result, error) {
 			w.Add("general", "规则集镜像", "this client loads rule sets through the mirror, whose URLs point to localhost here and will not load on other devices; open the admin page via a LAN / public address or set CUSCONF_BASE_URL")
 		}
 	}
-	// Servers of every enabled source, not only the profile's: a device running this
-	// config must still reach the other airports directly (e.g. cusconf's own node
-	// tests, or another app's subscription), or those connections would be proxied.
-	servers := serverNodes(nodes, req.Nodes)
+	// Servers of the profile's sources (all their nodes, not only the filtered ones), so
+	// connections to those airports are never sent through another proxy.
 	if !general.DisableServerDirect {
-		direct := ServerDirectRules(servers, req.SubscriptionURLs)
+		servers := sourceNodes(req.Profile.Sources, req.Nodes)
+		subs := sourceURLs(req.Profile.Sources, req.Subscriptions)
+		direct := ServerDirectRules(servers, subs)
 		if h := dohHost(general.ServerDNS); h != "" {
 			direct = append([]profile.Rule{{Type: "DOMAIN", Value: h, Policy: "DIRECT"}}, direct...)
 		}
 		rules = append(direct, rules...)
+		general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, servers, subs)...)
 	}
-	general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, servers, req.SubscriptionURLs)...)
+	rules = adaptProcessRules(rules, t)
 	cfg := &render.Config{
 		Target: t, Matrix: mx, Nodes: nodes, Groups: groups,
 		Rules: rules, RuleSets: sets, General: general, ManagedURL: req.ManagedURL, Mirror: req.Mirror,
@@ -285,15 +287,46 @@ func hasRuleSets(p *profile.Profile) bool {
 	return false
 }
 
-// serverNodes lists the selected nodes followed by the other real nodes of all
-// sources; airport info entries (traffic / expiry) are skipped, since their
-// servers are often placeholders.
-func serverNodes(selected, all []*node.Node) []*node.Node {
-	out := slices.Clone(selected)
+// sourceNodes lists the real nodes of the given sources (all when empty); airport
+// info entries (traffic / expiry) are skipped, since their servers are often placeholders.
+func sourceNodes(sources []string, all []*node.Node) []*node.Node {
+	var out []*node.Node
 	for _, n := range all {
-		if !node.IsInfo(n) {
+		if !node.IsInfo(n) && (len(sources) == 0 || slices.Contains(sources, n.Source)) {
 			out = append(out, n)
 		}
+	}
+	return out
+}
+
+// sourceURLs lists the subscription URLs of the given sources (all when empty), sorted.
+func sourceURLs(sources []string, subs map[string]string) []string {
+	var out []string
+	for id, u := range subs {
+		if len(sources) == 0 || slices.Contains(sources, id) {
+			out = append(out, u)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// adaptProcessRules drops process rules on mobile clients (iOS has no process
+// matching) and, outside Surge, turns PROCESS-NAME rules holding a full path into
+// PROCESS-PATH, since mihomo / sing-box match PROCESS-NAME against the bare name only.
+func adaptProcessRules(rules []profile.Rule, t capability.Target) []profile.Rule {
+	out := make([]profile.Rule, 0, len(rules))
+	for _, r := range rules {
+		if r.Type == "PROCESS-NAME" || r.Type == "PROCESS-PATH" {
+			if t.Platform == "ios" {
+				continue
+			}
+			if r.Type == "PROCESS-NAME" && t.Client != capability.Surge && strings.Contains(r.Value, "/") {
+				r.Type = "PROCESS-PATH"
+				r.Value = strings.TrimSuffix(r.Value, "/")
+			}
+		}
+		out = append(out, r)
 	}
 	return out
 }

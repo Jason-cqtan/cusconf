@@ -21,7 +21,14 @@ export interface GroupTemplate {
   rules?: string;
   /** Offer DIRECT first (services that usually work without a proxy). */
   direct?: boolean;
+  /**
+   * Desktop app process rules ("PROCESS-NAME,VALUE" lines, same syntax as rules), put at the very
+   * top of the rules; existing ones with the same value are pointed at the group. Mobile configs drop them.
+   */
+  process?: string;
 }
+
+const proc = (...paths: string[]) => paths.map((p) => `PROCESS-NAME,${p}`).join("\n");
 
 const claudeRules = `
 # Claude 补充域名
@@ -71,10 +78,10 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
   {
     category: tr("AI 服务"),
     items: [
-      { name: "OpenAI", icon: QURE + "ChatGPT.png", ruleSets: ["OpenAi"] },
+      { name: "OpenAI", icon: QURE + "ChatGPT.png", ruleSets: ["OpenAi"], process: proc("/Applications/ChatGPT.app", "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") },
       // ACL4SSR's Claude.list only has anthropic.com and claude.ai.
-      { name: "Claude", icon: LOBE + "claude-color.png", ruleSets: ["Claude"], rules: claudeRules },
-      { name: "Gemini", icon: LOBE + "gemini-color.png", ruleSets: ["Gemini"] },
+      { name: "Claude", icon: LOBE + "claude-color.png", ruleSets: ["Claude"], rules: claudeRules, process: proc("/Applications/Claude.app/", "/Applications/Claude.app/Contents/MacOS/Claude") },
+      { name: "Gemini", icon: LOBE + "gemini-color.png", ruleSets: ["Gemini"], process: proc("/Applications/Gemini.app", "/Applications/Gemini.app/Contents/MacOS/Gemini") },
       { name: "Grok", icon: LOBE + "grok.png", rules: "DOMAIN-SUFFIX,grok.com\nDOMAIN-SUFFIX,x.ai" },
       { name: "Copilot", icon: QURE + "Microsoft.png", ruleSets: ["Copilot"] },
     ],
@@ -174,6 +181,17 @@ export function addTemplates(o: EditableProfile, picked: GroupTemplate[]): [Edit
       }
       fresh.push(r.comment || !pendingNote ? r : { ...r, comment: pendingNote });
       pendingNote = undefined;
+    }
+    const procs: EditableRule[] = [];
+    for (const r of extraRules(t.process, t.name)) {
+      if (rules.some((x) => x.type === r.type && x.value === r.value)) {
+        rules = rules.map((x) => (x.type === r.type && x.value === r.value ? { ...x, policy: t.name } : x));
+      } else procs.push(r);
+    }
+    if (procs.length) {
+      procs[0] = { ...procs[0], comment: tr("桌面应用按进程分流（手机端配置自动去掉）") };
+      const top = rules.findIndex((x) => x.type !== "PROCESS-NAME" && x.type !== "PROCESS-PATH");
+      rules = top < 0 ? [...rules, ...procs] : [...rules.slice(0, top), ...procs, ...rules.slice(top)];
     }
     const pos = rules.findIndex(isBroad);
     rules = pos < 0 ? [...rules, ...fresh] : [...rules.slice(0, pos), ...fresh, ...rules.slice(pos)];

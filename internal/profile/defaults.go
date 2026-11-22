@@ -125,6 +125,13 @@ func Default(counts map[string]int, selfHosted int) Profile {
 		}
 	}
 	p.Rules = []Rule{
+		// Desktop AI apps by process (Surge Mac); mobile configs drop process rules.
+		{Type: "PROCESS-NAME", Value: "/Applications/Claude.app/", Policy: aiPolicy, Comment: "桌面 AI 应用按进程分流（仅桌面端生效，手机端配置自动去掉）"},
+		{Type: "PROCESS-NAME", Value: "/Applications/Claude.app/Contents/MacOS/Claude", Policy: aiPolicy},
+		{Type: "PROCESS-NAME", Value: "/Applications/ChatGPT.app", Policy: aiPolicy},
+		{Type: "PROCESS-NAME", Value: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT", Policy: aiPolicy},
+		{Type: "PROCESS-NAME", Value: "/Applications/Gemini.app", Policy: aiPolicy},
+		{Type: "PROCESS-NAME", Value: "/Applications/Gemini.app/Contents/MacOS/Gemini", Policy: aiPolicy},
 		{Type: "RULE-SET", Value: "LocalAreaNetwork", Policy: "DIRECT"},
 		{Type: "DOMAIN", Value: "cloudflare-dns.com", Policy: dohPolicy, Comment: "指向自动切换的稳定组"},
 		{Type: "DOMAIN", Value: "dns.google", Policy: dohPolicy},

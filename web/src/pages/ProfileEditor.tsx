@@ -235,7 +235,7 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
       <div className="sm:col-span-2"><Toggle checked={!!g.ipv6} onChange={(v) => set({ ipv6: v })} label={tr("启用 IPv6")} /></div>
       <div className="sm:col-span-2 space-y-1">
         <Toggle checked={!g.disableServerDirect} onChange={(v) => set({ disableServerDirect: !v || undefined })} label={tr("节点服务器与订阅地址直连（推荐）")} />
-        <p className="text-xs text-zinc-500">{tr("在所有规则最前面，为所有启用订阅源（不只是本配置用到的）的节点服务器地址和订阅链接域名加上 DIRECT 规则，避免这些连接被规则转进其它代理（代理套代理会导致超时，订阅也可能更新失败；本机运行 cusconf 测试其它机场节点时同样需要）。机场信息节点和局域网地址不会生成规则。")}</p>
+        <p className="text-xs text-zinc-500">{tr("在所有规则最前面，为本配置「节点范围」内订阅源（未选择则为全部启用的订阅源）的节点服务器地址和订阅链接域名加上 DIRECT 规则，避免这些连接被规则转进其它代理（代理套代理会导致超时，订阅也可能更新失败）。关闭后下方的节点域名 [Host] 映射也不再生成。机场信息节点和局域网地址不会生成规则。")}</p>
       </div>
       <div className="sm:col-span-2 xl:col-span-4">
         <Field label={tr("节点与订阅域名的解析 DNS")} hint={<>

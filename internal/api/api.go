@@ -378,7 +378,7 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := engine.Generate(engine.Request{Profile: &body.Profile, Nodes: nodes, Target: body.Target,
-		SubscriptionURLs: s.subscriptionURLs(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r)})
+		Subscriptions: s.subscriptions(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r)})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -525,7 +525,7 @@ func (s *Server) serveToken(w http.ResponseWriter, r *http.Request, tokID, selfU
 	}
 	res, err := engine.Generate(engine.Request{
 		Profile: p, Nodes: nodes, Target: tok.Target,
-		ManagedURL: selfURL, SubscriptionURLs: s.subscriptionURLs(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r),
+		ManagedURL: selfURL, Subscriptions: s.subscriptions(), Mirror: s.mirrorFunc(r), MirrorLocal: s.mirrorLocal(r),
 	})
 	if err != nil {
 		fail(http.StatusInternalServerError, err.Error())
@@ -746,15 +746,15 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 
 // subscriptionURLs lists the URLs of all enabled URL sources. Every one gets a
 // DIRECT rule, not only the profile's: the device may refresh the others too.
-func (s *Server) subscriptionURLs() []string {
+func (s *Server) subscriptions() map[string]string {
 	srcs, err := s.st.ListSources()
 	if err != nil {
 		return nil
 	}
-	var out []string
+	out := map[string]string{}
 	for _, src := range srcs {
 		if src.Kind == "url" && src.Enabled {
-			out = append(out, src.URL)
+			out[src.ID] = src.URL
 		}
 	}
 	return out

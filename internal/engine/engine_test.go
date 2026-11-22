@@ -367,7 +367,7 @@ func TestServerDirectRules(t *testing.T) {
 
 	// On by default, first in the config; off when disabled.
 	p := profile.Default(nil, 0)
-	res, err := Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge, Platform: "ios"}, SubscriptionURLs: []string{"https://sub.airport.com/x"}})
+	res, err := Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge, Platform: "ios"}, Subscriptions: map[string]string{"s1": "https://sub.airport.com/x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +492,7 @@ func TestServerDNS(t *testing.T) {
 		t.Fatal(err)
 	}
 	nodes := loadNodes(t)
-	sg, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}, SubscriptionURLs: []string{"https://sub.airport.com/x"}})
+	sg, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}, Subscriptions: map[string]string{"s1": "https://sub.airport.com/x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,35 +566,6 @@ func TestDefaultGeneral(t *testing.T) {
 		t.Error("stash test url")
 	}
 }
-
-func TestServerDirectAllSources(t *testing.T) {
-	p := profile.Default(nil, 0)
-	p.Sources = []string{"mine"}
-	nodes := []*node.Node{
-		{Name: "A", Type: node.SS, Server: "a.example.com", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "mine"},
-		{Name: "B", Type: node.SS, Server: "b.other.com", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
-		{Name: "流量：1G / 2G", Type: node.SS, Server: "1.1.1.1", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
-		{Name: "LAN", Type: node.SS, Server: "192.168.1.2", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "other"},
-	}
-	res, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(res.Content, "B = ss") {
-		t.Error("node of another source must not be emitted")
-	}
-	for _, want := range []string{"DOMAIN,a.example.com,DIRECT", "DOMAIN,b.other.com,DIRECT"} {
-		if !strings.Contains(res.Content, want) {
-			t.Errorf("missing %s", want)
-		}
-	}
-	for _, bad := range []string{"1.1.1.1/32", "192.168.1.2/32"} {
-		if strings.Contains(res.Content, bad) {
-			t.Errorf("unexpected DIRECT rule for %s", bad)
-		}
-	}
-}
-
 func TestDefaultDoHRules(t *testing.T) {
 	withHK := profile.Default(map[string]int{"HK": 3, "JP": 2}, 0)
 	noHK := profile.Default(map[string]int{"JP": 2}, 0)
@@ -653,5 +624,58 @@ func TestDefaultRuleSets(t *testing.T) {
 	}
 	if ai := policyOf(profile.Default(map[string]int{"HK": 3}, 0))["AI"]; ai != profile.GlobalGroup {
 		t.Errorf("AI with only HK nodes: %s", ai)
+	}
+}
+
+func TestServerDirectScope(t *testing.T) {
+	nodes := []*node.Node{
+		{Name: "a", Type: "ss", Server: "a.example.com", Port: 1, Source: "s1"},
+		{Name: "b", Type: "ss", Server: "b.example.com", Port: 1, Source: "s2"},
+	}
+	subs := map[string]string{"s1": "https://sub1.example.com/x", "s2": "https://sub2.example.com/x"}
+	p := profile.Default(nil, 0)
+	p.Sources = []string{"s1"}
+	res, err := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}, Subscriptions: subs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"DOMAIN,a.example.com,DIRECT", "DOMAIN,sub1.example.com,DIRECT", "a.example.com = server:", "sub1.example.com = server:"} {
+		if !strings.Contains(res.Content, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	for _, bad := range []string{"b.example.com", "sub2.example.com"} {
+		if strings.Contains(res.Content, bad) {
+			t.Errorf("%q is outside the profile's sources", bad)
+		}
+	}
+	// Off: neither DIRECT rules nor generated hosts.
+	p.General.DisableServerDirect = true
+	res, _ = Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}, Subscriptions: subs})
+	if strings.Contains(res.Content, "DOMAIN,a.example.com,DIRECT") || strings.Contains(res.Content, "a.example.com = server:") || strings.Contains(res.Content, "sub1.example.com") {
+		t.Errorf("disabled but generated:\n%s", res.Content)
+	}
+}
+
+func TestProcessRules(t *testing.T) {
+	p := profile.Default(nil, 0)
+	gen := func(tg capability.Target) string {
+		res, err := Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: tg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Content
+	}
+	mac := gen(capability.Target{Client: capability.Surge, Platform: "mac"})
+	if !strings.Contains(mac, "PROCESS-NAME,/Applications/Claude.app/,") || !strings.Contains(mac, "PROCESS-NAME,/Applications/ChatGPT.app/Contents/MacOS/ChatGPT,") {
+		t.Error("surge mac should keep process rules")
+	}
+	for _, tg := range []capability.Target{{Client: capability.Surge, Platform: "ios"}, {Client: capability.Stash, Platform: "ios"}, {Client: capability.Loon}, {Client: capability.QX}} {
+		if c := gen(tg); strings.Contains(c, "PROCESS") || strings.Contains(c, "Claude.app") {
+			t.Errorf("%s should drop process rules", tg.Client)
+		}
+	}
+	if c := gen(capability.Target{Client: capability.ClashMeta}); !strings.Contains(c, "PROCESS-PATH,/Applications/Claude.app/Contents/MacOS/Claude,") {
+		t.Error("mihomo should get PROCESS-PATH for full paths")
 	}
 }
