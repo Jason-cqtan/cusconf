@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Ban, RotateCcw, History, ExternalLink, Download, Scissors, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Ban, RotateCcw, History, ExternalLink, Download, Scissors, X } from "lucide-react";
 import { api, defaultPlatform, formatTime, installURL, subURL, tokenURL, type Access, type Capabilities, type Profile, type Token } from "../api";
 import { Badge, Button, Card, CopyButton, Empty, ErrorText, Field, Input, Modal, PageHeader, Select } from "../components/ui";
 import { TargetPicker } from "./PreviewPanel";
@@ -25,7 +25,7 @@ export default function TokensPage() {
   const [items, setItems] = useState<Token[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Token | "new" | null>(null);
   const [log, setLog] = useState<{ t: Token; items: Access[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -50,7 +50,7 @@ export default function TokensPage() {
         sticky
         title={tr("订阅链接")}
         desc={tr("每个链接绑定一份配置与目标客户端版本。客户端通过链接导入后会按间隔自动更新。")}
-        actions={<Button variant="primary" disabled={!profiles.length} onClick={() => setCreating(true)}><Plus size={16} /> {tr("新建链接")}</Button>}
+        actions={<Button variant="primary" disabled={!profiles.length} onClick={() => setEditing("new")}><Plus size={16} /> {tr("新建链接")}</Button>}
       />
       <ErrorText error={err} />
       {!profiles.length && <Empty>{tr("请先创建一份配置。")}</Empty>}
@@ -83,6 +83,7 @@ export default function TokensPage() {
                 <span>{tr("访问")} {t.uses}{t.maxUses ? ` / ${t.maxUses}` : ""} {tr("次")}</span>
                 <span>{tr("最近")} {formatTime(t.lastUsedAt)}{t.lastIp && ` · ${t.lastIp}`}</span>
                 <span className="ml-auto flex gap-1">
+                  <Button size="sm" variant="ghost" title={tr("修改有效期、次数、配置或目标客户端，链接地址不变")} onClick={() => setEditing(t)}><Pencil size={14} /> {tr("编辑")}</Button>
                   <Button size="sm" variant="ghost" onClick={async () => setLog({ t, items: await api.access(t.token) })}><History size={14} /> {tr("日志")}</Button>
                   <Button size="sm" variant="ghost" onClick={async () => { await api.saveToken({ ...t, revoked: !t.revoked }); load(); }}>
                     {t.revoked ? <><RotateCcw size={14} /> {tr("恢复")}</> : <><Ban size={14} /> {tr("吊销")}</>}
@@ -94,7 +95,7 @@ export default function TokensPage() {
           );
         })}
       </div>
-      {creating && <CreateToken profiles={profiles} caps={caps} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} />}
+      {editing && <TokenForm token={editing === "new" ? undefined : editing} profiles={profiles} caps={caps} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       <Modal open={!!log} onClose={() => setLog(null)} title={tr("访问日志 · {0}", log?.t.name ?? "")} wide>
         {log && (log.items.length === 0 ? <Empty>{tr("暂无访问")}</Empty> : (
           <table className="w-full text-xs">
@@ -114,18 +115,22 @@ export default function TokensPage() {
   );
 }
 
-function CreateToken({ profiles, caps, onClose, onSaved }: { profiles: Profile[]; caps: Capabilities | null; onClose: () => void; onSaved: () => void }) {
-  const [t, setT] = useState<Partial<Token>>({ profileId: profiles[0]?.id, target: { client: "surge", platform: "ios", version: "" }, name: "" });
-  const [days, setDays] = useState(0);
+// keepExpiry is the expiry option that leaves an edited link's expiry as it is.
+const keepExpiry = -1;
+
+function TokenForm({ token, profiles, caps, onClose, onSaved }: { token?: Token; profiles: Profile[]; caps: Capabilities | null; onClose: () => void; onSaved: () => void }) {
+  const [t, setT] = useState<Partial<Token>>(token ?? { profileId: profiles[0]?.id, target: { client: "surge", platform: "ios", version: "" }, name: "" });
+  const [days, setDays] = useState(token ? keepExpiry : 0);
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     try {
-      await api.saveToken({ ...t, expiresAt: days ? Math.floor(Date.now() / 1000) + days * 86400 : 0 });
+      const expiresAt = days === keepExpiry ? t.expiresAt ?? 0 : days ? Math.floor(Date.now() / 1000) + days * 86400 : 0;
+      await api.saveToken({ ...t, expiresAt });
       onSaved();
     } catch (e) { setErr((e as Error).message); }
   };
   return (
-    <Modal open onClose={onClose} title={tr("新建订阅链接")} footer={<><Button onClick={onClose}>{tr("取消")}</Button><Button variant="primary" onClick={save}>{tr("创建")}</Button></>}>
+    <Modal open onClose={onClose} title={token ? tr("编辑订阅链接") : tr("新建订阅链接")} footer={<><Button onClick={onClose}>{tr("取消")}</Button><Button variant="primary" onClick={save}>{token ? tr("保存") : tr("创建")}</Button></>}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label={tr("名称")}><Input value={t.name} placeholder={tr("例如 iPhone")} onChange={(e) => setT({ ...t, name: e.target.value })} /></Field>
@@ -137,8 +142,9 @@ function CreateToken({ profiles, caps, onClose, onSaved }: { profiles: Profile[]
         </div>
         <TargetPicker value={t.target!} onChange={(target) => setT({ ...t, target })} caps={caps} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label={tr("有效期")}>
+          <Field label={tr("有效期")} hint={token ? tr("从现在起算") : undefined}>
             <Select value={days} onChange={(e) => setDays(+e.target.value)}>
+              {token && <option value={keepExpiry}>{tr("保持不变")}（{token.expiresAt ? formatTime(token.expiresAt) : tr("永不")}）</option>}
               {expiryOptions.map((o) => <option key={o.days} value={o.days}>{o.label}</option>)}
             </Select>
           </Field>
