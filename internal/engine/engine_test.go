@@ -555,14 +555,14 @@ func TestDefaultGeneral(t *testing.T) {
 		"encrypted-dns-follow-outbound-mode = true\n",
 		"# 加密 DNS 服务器固定地址，连接它们无需先做明文 DNS 查询\ndns.alidns.com = 223.5.5.5, 223.6.6.6\n",
 		"*.cn = server:https://dns.alidns.com/dns-query\n",
-		"RULE-SET:https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaDomain.list = server:https://dns.alidns.com/dns-query\n",
+		"DOMAIN-SET:" + profile.ChinaDomainSet + " = server:https://dns.alidns.com/dns-query\n",
 	} {
 		if !strings.Contains(mac.Content, want) {
 			t.Errorf("surge mac missing %q", want)
 		}
 	}
 	old, _ := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac", Version: "5.9.0"}})
-	if strings.Contains(old.Content, "RULE-SET:https") || !hasWarning(old.Warnings, "RULE-SET:https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaDomain.list", "5.10.0") {
+	if strings.Contains(old.Content, "DOMAIN-SET:https") || !hasWarning(old.Warnings, "DOMAIN-SET:"+profile.ChinaDomainSet, "5.10.0") {
 		t.Error("rule-set host entries need Surge Mac 5.10.0")
 	}
 	st, _ := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Stash, Platform: "ios"}})

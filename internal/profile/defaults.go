@@ -178,12 +178,18 @@ func DefaultGeneral() General {
 			{Domain: "dns.alidns.com", Value: "223.5.5.5, 223.6.6.6", Comment: "加密 DNS 服务器固定地址，连接它们无需先做明文 DNS 查询"},
 			{Domain: "cloudflare-dns.com", Value: "1.1.1.1, 1.0.0.1"},
 			{Domain: "dns.google", Value: "8.8.8.8, 8.8.4.4"},
-			{Domain: "*.cn", Value: "server:" + AliDoH, Comment: "国内域名用阿里加密 DNS，得到国内 CDN 的就近地址；与分流共用 ChinaDomain 列表"},
-			{Domain: "RULE-SET:https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/ChinaDomain.list", Value: "server:" + AliDoH},
+			{Domain: "*.cn", Value: "server:" + AliDoH, Comment: "国内域名用阿里加密 DNS，得到国内 CDN 的就近地址"},
+			// A complete China domain list (~110k): a domain missing here is resolved by the
+			// overseas encrypted DNS and may get a distant or unreachable CDN node (e.g.
+			// feishucdn.com is not in ACL4SSR's ChinaDomain list).
+			{Domain: "DOMAIN-SET:" + ChinaDomainSet, Value: "server:" + AliDoH, Comment: "完整国内域名列表（约 11 万条，Loyalsoldier），不在列表里的国内 CDN 域名会被境外 DNS 解析到远端节点"},
 		},
 		Extra: map[string]string{"surge": DefaultSurgeExtra},
 	}
 }
+
+// ChinaDomainSet is a complete China domain list in Surge domain-set format.
+const ChinaDomainSet = "https://raw.githubusercontent.com/Loyalsoldier/surge-rules/release/direct.txt"
 
 // DefaultSurgeExtra is appended to Surge's [General]; edit it in the profile's General tab.
 const DefaultSurgeExtra = `# ---- DNS 防劫持 ----
