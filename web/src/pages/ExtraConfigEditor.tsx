@@ -29,7 +29,7 @@ const surgeOptions: Option[] = [
   { key: "exclude-simple-hostnames", value: "true", desc: tr("不带点的主机名不走代理"), overrides: true },
   { key: "tun-excluded-routes", value: "192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12", desc: tr("这些网段不经过 Surge 虚拟网卡") },
   { key: "tun-included-routes", value: "192.168.1.12/32", desc: tr("额外让这些网段经过 Surge 虚拟网卡") },
-  { key: "proxy-test-url", value: "https://cp.cloudflare.com/generate_204", desc: tr("代理测速地址"), overrides: true },
+  { key: "proxy-test-url", value: "http://cp.cloudflare.com/generate_204", desc: tr("代理测速地址（旧版 Surge 不接受 https）"), overrides: true },
   { key: "internet-test-url", value: "http://www.apple.com/library/test/success.html", desc: tr("直连测速地址"), overrides: true },
   { key: "proxy-test-udp", value: "www.apple.com@64.6.64.6", desc: tr("UDP 测速：通过代理向该 DNS 服务器查询域名") },
   { key: "test-timeout", value: "5", desc: tr("测速超时（秒）") },

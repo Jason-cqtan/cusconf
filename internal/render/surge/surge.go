@@ -634,6 +634,17 @@ func splitExtra(w *render.Warnings, texts ...string) (string, []rawSection) {
 	return strings.Join(general, "\n"), kept
 }
 
+// plainHTTP turns an https:// test URL into http://. Older Surge versions (e.g. Mac
+// 6.4.4) reject the whole profile over an https test URL, and a subscription link is
+// often imported on a Surge older than its target version; the usual test endpoints
+// answer plain HTTP too. A value set in the raw extra text is kept as written.
+func plainHTTP(u string) string {
+	if rest, ok := strings.CutPrefix(u, "https://"); ok {
+		return "http://" + rest
+	}
+	return u
+}
+
 // generalSection renders [General] from the profile's settings, then applies the
 // raw extra text: a "key = value" line whose key is already generated replaces
 // that line in place; other lines (new keys, comments) are appended in order.
@@ -650,8 +661,8 @@ func generalSection(g profile.General) string {
 	lines := []kv{
 		{"loglevel", "notify"},
 		{"dns-server", strings.Join(dns, ", ")},
-		{"proxy-test-url", or(g.TestURL, render.DefaultTestURL)},
-		{"internet-test-url", or(g.InternetTestURL, "http://www.apple.com/library/test/success.html")},
+		{"proxy-test-url", plainHTTP(or(g.TestURL, render.DefaultTestURL))},
+		{"internet-test-url", plainHTTP(or(g.InternetTestURL, "http://www.apple.com/library/test/success.html"))},
 		{"ipv6", strconv.FormatBool(g.IPv6)},
 		{"skip-proxy", strings.Join(skip, ", ")},
 		{"exclude-simple-hostnames", "true"},

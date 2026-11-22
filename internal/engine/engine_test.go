@@ -548,7 +548,7 @@ func TestDefaultGeneral(t *testing.T) {
 	nodes := loadNodes(t)
 	mac, _ := Generate(Request{Profile: &p, Nodes: nodes, Target: capability.Target{Client: capability.Surge, Platform: "mac"}})
 	for _, want := range []string{
-		"proxy-test-url = https://cp.cloudflare.com/generate_204\n",
+		"proxy-test-url = http://cp.cloudflare.com/generate_204\n",
 		"dns-server = 223.5.5.5, 119.29.29.29\n",
 		"skip-proxy = 127.0.0.1, 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 100.64.0.0/10, 17.0.0.0/8, localhost, *.local, captive.apple.com",
 		"hijack-dns = *:53\n",

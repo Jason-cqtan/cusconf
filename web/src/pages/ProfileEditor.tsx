@@ -234,8 +234,8 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
     <div className="space-y-8">
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Field label={tr("DNS 服务器")} hint={tr("逗号分隔；Surge 可用 system")}><Input value={list(g.dns)} onChange={(e) => set({ dns: parse(e.target.value) })} placeholder="system, 223.5.5.5, 119.29.29.29" /></Field>
-      <Field label={tr("代理测速 URL")}><Input value={g.testUrl ?? ""} onChange={(e) => set({ testUrl: e.target.value })} placeholder="https://cp.cloudflare.com/generate_204" /></Field>
-      <Field label={tr("直连测速 URL（Surge）")}><Input value={g.internetTestUrl ?? ""} onChange={(e) => set({ internetTestUrl: e.target.value })} placeholder="http://www.apple.com/library/test/success.html" /></Field>
+      <Field label={tr("代理测速 URL")} hint={tr("Surge 配置中 https:// 会改为 http://：旧版 Surge（如 Mac 6.4）遇到 https 测速地址会整份配置报错")}><Input value={g.testUrl ?? ""} onChange={(e) => set({ testUrl: e.target.value })} placeholder="https://cp.cloudflare.com/generate_204" /></Field>
+      <Field label={tr("直连测速 URL（Surge）")} hint={tr("https:// 同样会改为 http://")}><Input value={g.internetTestUrl ?? ""} onChange={(e) => set({ internetTestUrl: e.target.value })} placeholder="http://www.apple.com/library/test/success.html" /></Field>
       <Field label={tr("配置自动更新间隔（秒）")}><Input type="number" value={g.updateInterval ?? ""} onChange={(e) => set({ updateInterval: +e.target.value || undefined })} placeholder="86400" /></Field>
       <Field label={tr("跳过代理")} className="sm:col-span-2 xl:col-span-4"><Input value={list(g.skipProxy)} onChange={(e) => set({ skipProxy: parse(e.target.value) })} placeholder={tr("留空使用默认局域网地址")} /></Field>
       <div className="sm:col-span-2"><Toggle checked={!!g.ipv6} onChange={(v) => set({ ipv6: v })} label={tr("启用 IPv6")} /></div>

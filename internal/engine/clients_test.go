@@ -260,3 +260,23 @@ func TestSurgeExtraSections(t *testing.T) {
 		t.Errorf("mac should only get the shared text:\n%s", mac[strings.LastIndex(mac, "[Host]"):])
 	}
 }
+
+func TestSurgeTestURLsPlainHTTP(t *testing.T) {
+	p := profile.Default(nil, 0)
+	p.General.InternetTestURL = "https://www.baidu.com"
+	res, err := Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge, Platform: "mac"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"proxy-test-url = http://cp.cloudflare.com/generate_204\n", "internet-test-url = http://www.baidu.com\n"} {
+		if !strings.Contains(res.Content, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	// Raw extra text is kept as written.
+	p.General.Extra = map[string]string{"surge": "proxy-test-url = https://example.com/204"}
+	res, _ = Generate(Request{Profile: &p, Nodes: loadNodes(t), Target: capability.Target{Client: capability.Surge, Platform: "mac"}})
+	if !strings.Contains(res.Content, "proxy-test-url = https://example.com/204\n") {
+		t.Error("extra value should be kept")
+	}
+}
