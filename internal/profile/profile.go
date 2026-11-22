@@ -352,7 +352,8 @@ func (f *Filter) Match(n *node.Node) bool {
 	if len(f.Sources) > 0 && !slices.Contains(f.Sources, n.Source) {
 		return false
 	}
-	if f.hasProbeConditions() && !f.matchProbe(n.Probe) {
+	// Local nodes are never tested, so test conditions do not apply to them.
+	if f.hasProbeConditions() && !node.IsLocal(n) && !f.matchProbe(n.Probe) {
 		return false
 	}
 	return true

@@ -150,6 +150,7 @@ function SourceForm({ initial, onClose, onSaved }: { initial: Partial<Source>; o
             <Field label={tr("节点内容")} hint={tr("每行一个分享链接（ss:// vmess:// vless:// trojan:// hy2:// tuic:// wireguard:// anytls://），或粘贴 Clash proxies / Surge [Proxy] 段")}>
               <Textarea rows={10} value={s.content} onChange={(e) => { set({ content: e.target.value }); setPreview(null); }} />
             </Field>
+            <p className="text-xs text-zinc-500">{tr("服务器为 127.0.0.1 / localhost 的本机节点（如本地中转、公司 VPN 客户端的 SOCKS 端口）只在桌面端生效：cusconf 不测试它们，手机端配置会自动去掉这些节点、只包含它们的策略组和指向这些组的规则。节点名不要和策略组同名。")}</p>
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={async () => setPreview(await api.parse(s.content ?? ""))}>{tr("解析预览")}</Button>
               {preview && <span className="text-xs text-zinc-500">{tr("格式")} {preview.format}{tr("，")}{preview.nodes.length} {tr("个节点")}{preview.errors.length > 0 && tr("，{0} 个错误", preview.errors.length)}</span>}

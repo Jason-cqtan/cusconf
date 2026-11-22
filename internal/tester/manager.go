@@ -44,16 +44,17 @@ func NewManager(st *store.Store) *Manager { return &Manager{st: st} }
 
 var (
 	ErrBusy    = errors.New("已有测试在运行")
-	ErrNoNodes = errors.New("没有可测试的节点（机场信息节点不测试；请检查测试来源设置）")
+	ErrNoNodes = errors.New("没有可测试的节点（机场信息节点和本机地址节点不测试；请检查测试来源设置）")
 )
 
-// Testable drops airport info pseudo-nodes and nodes outside the configured sources,
+// Testable drops airport info pseudo-nodes, local (loopback) nodes, which only work on
+// the device running them, and nodes outside the configured sources,
 // and keeps one node per endpoint key.
 func Testable(nodes []*node.Node, s Settings) []*node.Node {
 	seen := map[string]bool{}
 	var out []*node.Node
 	for _, n := range nodes {
-		if node.IsInfo(n) || (len(s.Sources) > 0 && !slices.Contains(s.Sources, n.Source)) {
+		if node.IsInfo(n) || node.IsLocal(n) || (len(s.Sources) > 0 && !slices.Contains(s.Sources, n.Source)) {
 			continue
 		}
 		if k := n.Key(); !seen[k] {

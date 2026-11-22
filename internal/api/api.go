@@ -739,6 +739,10 @@ func (s *Server) testNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "节点不存在，或是机场信息节点")
 		return
 	}
+	if node.IsLocal(target) {
+		writeErr(w, http.StatusBadRequest, "本机地址节点只在运行它的设备上可用，cusconf 不测试")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	writeJSON(w, s.tests.TestOne(ctx, target, tester.Checks{IP: in.IP, Services: in.Services}))

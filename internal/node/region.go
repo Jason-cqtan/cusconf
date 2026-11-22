@@ -1,6 +1,7 @@
 package node
 
 import (
+	"net/netip"
 	"regexp"
 	"strings"
 )
@@ -142,6 +143,19 @@ const InfoPattern = `(?i)traffic|expire|剩余|到期|过期|官网|流量|重�
 
 // IsInfo reports whether the node looks like an airport info entry, not a real proxy.
 func IsInfo(n *Node) bool { return infoRe.MatchString(n.Name) }
+
+// IsLocal reports whether the node's server is this device (localhost / loopback),
+// e.g. a local relay such as a corporate VPN client's SOCKS port. Such nodes only
+// work on the device itself: cusconf does not test them and leaves them out of
+// mobile configs.
+func IsLocal(n *Node) bool {
+	h := strings.Trim(strings.ToLower(strings.TrimSpace(n.Server)), "[].")
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(h)
+	return err == nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
 
 // Region detects an ISO 3166 region code for the node, or "" when unknown.
 func Region(n *Node) string {

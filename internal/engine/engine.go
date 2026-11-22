@@ -3,6 +3,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -227,6 +228,10 @@ func Generate(req Request) (render.Result, error) {
 		w.Add("general", "nodes", "no nodes selected")
 	}
 	groups := ResolveGroups(req.Profile, nodes, &w)
+	var droppedGroups map[string]bool
+	if t.Platform == "ios" {
+		nodes, groups, droppedGroups = dropLocal(nodes, groups, &w)
+	}
 	sets := map[string]profile.RuleSet{}
 	for _, rs := range req.Profile.RuleSets {
 		sets[rs.Name] = rs
@@ -255,6 +260,15 @@ func Generate(req Request) (render.Result, error) {
 		general.Hosts = append(slices.Clone(general.Hosts), ServerDNSHosts(general, servers, subs)...)
 	}
 	rules = adaptProcessRules(rules, t)
+	if len(droppedGroups) > 0 {
+		kept := make([]profile.Rule, 0, len(rules))
+		for _, r := range rules {
+			if !droppedGroups[r.Policy] {
+				kept = append(kept, r)
+			}
+		}
+		rules = kept
+	}
 	cfg := &render.Config{
 		Target: t, Matrix: mx, Nodes: nodes, Groups: groups,
 		Rules: rules, RuleSets: sets, General: general, ManagedURL: req.ManagedURL, Mirror: req.Mirror,
@@ -285,6 +299,45 @@ func hasRuleSets(p *profile.Profile) bool {
 		}
 	}
 	return false
+}
+
+// dropLocal removes local (loopback) nodes, which only work on the device running
+// them, from a mobile config, along with the groups left empty by it (repeatedly, as
+// a group may only hold such groups). It returns the dropped group names, whose rules
+// the caller removes too.
+func dropLocal(nodes []*node.Node, groups []render.Group, w *render.Warnings) ([]*node.Node, []render.Group, map[string]bool) {
+	gone := map[string]bool{}
+	var kept []*node.Node
+	for _, n := range nodes {
+		if node.IsLocal(n) {
+			gone[n.Name] = true
+		} else {
+			kept = append(kept, n)
+		}
+	}
+	if len(gone) == 0 {
+		return nodes, groups, nil
+	}
+	dropped := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for i := range groups {
+			g := &groups[i]
+			if dropped[g.Name] {
+				continue
+			}
+			had := len(g.Members) > 0
+			g.Members = slices.DeleteFunc(slices.Clone(g.Members), func(m string) bool { return gone[m] || dropped[m] })
+			if had && len(g.Members) == 0 {
+				dropped[g.Name] = true
+				changed = true
+			}
+		}
+	}
+	groups = slices.DeleteFunc(groups, func(g render.Group) bool { return dropped[g.Name] })
+	names := slices.Sorted(maps.Keys(gone))
+	w.Add("general", "本机节点", "local nodes (%s) only work on the device itself and are left out of mobile configs, with the groups and rules that only use them", strings.Join(names, ", "))
+	return kept, groups, dropped
 }
 
 // sourceNodes lists the real nodes of the given sources (all when empty); airport

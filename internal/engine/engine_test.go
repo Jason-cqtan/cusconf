@@ -679,3 +679,47 @@ func TestProcessRules(t *testing.T) {
 		t.Error("mihomo should get PROCESS-PATH for full paths")
 	}
 }
+
+func TestLocalNodes(t *testing.T) {
+	nodes := []*node.Node{
+		{Name: "🇭🇰 HK 01", Type: node.SS, Server: "hk.example.com", Port: 1, Cipher: "aes-128-gcm", Password: "x", Source: "air"},
+		{Name: "Corp SOCKS", Type: node.SOCKS5, Server: "127.0.0.1", Port: 10808, Source: "local", SelfHosted: true},
+	}
+	p := profile.Default(nil, 0)
+	p.Groups = append(p.Groups,
+		profile.Group{Name: "CorpVPN", Type: profile.Select, Members: []string{"Corp SOCKS"}},
+		profile.Group{Name: "Corp", Type: profile.Select, Members: []string{"CorpVPN"}}, // only a dropped group
+		profile.Group{Name: "Mixed", Type: profile.Select, Members: []string{"Corp SOCKS", "DIRECT"}},
+	)
+	p.Filter.Reachable = true // local nodes are never tested; the condition must not drop them
+	p.Rules = append([]profile.Rule{
+		{Type: "IP-CIDR", Value: "10.200.9.0/24", Policy: "CorpVPN", NoResolve: true},
+		{Type: "DOMAIN", Value: "corp.example.com", Policy: "Corp"},
+		{Type: "DOMAIN", Value: "mixed.example.com", Policy: "Mixed"},
+	}, p.Rules...)
+	gen := func(tg capability.Target) render.Result {
+		res, err := Generate(Request{Profile: &p, Nodes: nodes, Target: tg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	mac := gen(capability.Target{Client: capability.Surge, Platform: "mac"}).Content
+	for _, want := range []string{"Corp SOCKS = socks5, 127.0.0.1, 10808", "IP-CIDR,10.200.9.0/24,CorpVPN,no-resolve", "DOMAIN,corp.example.com,Corp"} {
+		if !strings.Contains(mac, want) {
+			t.Errorf("mac missing %q", want)
+		}
+	}
+	ios := gen(capability.Target{Client: capability.Surge, Platform: "ios"})
+	for _, bad := range []string{"127.0.0.1, 10808", "10.200.9.0/24", "corp.example.com", "Corp = select"} {
+		if strings.Contains(ios.Content, bad) {
+			t.Errorf("ios should not contain %q", bad)
+		}
+	}
+	if !strings.Contains(ios.Content, "Mixed = select, DIRECT") || !strings.Contains(ios.Content, "DOMAIN,mixed.example.com,Mixed") {
+		t.Error("group with other members should stay")
+	}
+	if !hasWarning(ios.Warnings, "本机节点", "Corp SOCKS") {
+		t.Errorf("warnings: %+v", ios.Warnings)
+	}
+}

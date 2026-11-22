@@ -497,6 +497,7 @@ export const en: Record<string, string> = {
   "节点与订阅域名的解析 DNS": "DNS for node and subscription domains",
   "节点内容": "Nodes",
   "桌面应用按进程分流（手机端配置自动去掉）": "Desktop apps by process (dropped from mobile configs)",
+  "服务器为 127.0.0.1 / localhost 的本机节点（如本地中转、公司 VPN 客户端的 SOCKS 端口）只在桌面端生效：cusconf 不测试它们，手机端配置会自动去掉这些节点、只包含它们的策略组和指向这些组的规则。节点名不要和策略组同名。": "Local nodes whose server is 127.0.0.1 / localhost (e.g. a local relay or a corporate VPN client's SOCKS port) only work on desktop: cusconf does not test them, and mobile configs leave out these nodes, the groups holding only them and the rules pointing to those groups. Do not give a node the same name as a group.",
   "节点服务器与订阅地址直连（推荐）": "Direct connections to node servers and subscription hosts (recommended)",
   "节点类别": "Node kind",
   "节点范围": "Node scope",
