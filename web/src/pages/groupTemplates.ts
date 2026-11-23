@@ -59,6 +59,15 @@ IP-CIDR6,2607:6bc0::/32,no-resolve
 IP-ASN,399358,no-resolve
 `;
 
+// Turkish game top-up store; no public rule set covers it. Hosts seen on the site:
+// www / cdn / cdn-eu / assets / livechat / node2 under oyunfor.com, product images on xmlbankasi.
+const oyunforRules = `
+# Oyunfor 主站、CDN、在线客服
+DOMAIN-SUFFIX,oyunfor.com
+# 商品图片 CDN
+DOMAIN-SUFFIX,xmlbankasi.com
+`;
+
 /** Parses a template's extra rules, routed to `policy`. */
 function extraRules(text: string | undefined, policy: string): EditableRule[] {
   const out: EditableRule[] = [];
@@ -126,6 +135,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
       { name: "Apple", icon: QURE + "Apple.png", ruleSets: ["Apple"], direct: true },
       { name: "Microsoft", icon: QURE + "Microsoft.png", ruleSets: ["Microsoft"], direct: true },
       { name: "Steam", icon: QURE + "Steam.png", ruleSets: ["Steam"] },
+      { name: "Oyunfor", icon: QURE + "Game.png", rules: oyunforRules },
       { name: "PayPal", icon: QURE + "PayPal.png", ruleSets: ["PayPal"] },
     ],
   },
