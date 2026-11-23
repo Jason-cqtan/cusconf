@@ -81,7 +81,14 @@ func Render(c *render.Config) render.Result {
 			warnedOrder = true
 			w.Add("rule", r.Type+","+r.Value, "Loon matches [Rule] before [Remote Rule]; local rules after a rule set now come first")
 		}
-		line := fmt.Sprintf("%s,%s,%s", r.Type, r.Value, policy)
+		typ, val := r.Type, r.Value
+		if typ == "PROTOCOL" {
+			var ok bool
+			if typ, val, ok = render.ProtocolRule(c, val, &w); !ok {
+				continue
+			}
+		}
+		line := fmt.Sprintf("%s,%s,%s", typ, val, policy)
 		if r.NoResolve {
 			line += ",no-resolve"
 		}

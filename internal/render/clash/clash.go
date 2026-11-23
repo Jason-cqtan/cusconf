@@ -196,6 +196,12 @@ func Render(c *render.Config) render.Result {
 				line += ",no-resolve"
 			}
 			rules = append(rules, line)
+		case "PROTOCOL":
+			t, v, ok := render.ProtocolRule(c, r.Value, &w)
+			if !ok {
+				continue
+			}
+			rules = append(rules, fmt.Sprintf("%s,%s,%s", t, v, r.Policy))
 		default:
 			line := fmt.Sprintf("%s,%s,%s", r.Type, r.Value, r.Policy)
 			if r.NoResolve {

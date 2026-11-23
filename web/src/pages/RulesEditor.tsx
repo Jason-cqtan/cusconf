@@ -5,7 +5,7 @@ import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx, useFlash 
 import { SortableList } from "../components/Sortable";
 import { uid, type EditableProfile, type EditableRule } from "./ProfileEditor";
 import { presetSources } from "./rulePresets";
-import { ImportRulesDialog, ruleTypes } from "./ImportRules";
+import { ImportRulesDialog, protocolValues, ruleTypes } from "./ImportRules";
 import MirrorDialog from "./MirrorDialog";
 import { tr } from "../i18n";
 
@@ -145,6 +145,11 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
                 <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => patch(i, { value: e.target.value })}>
                   <option value="">{tr("选择规则集")}</option>
                   {p.ruleSets.map((s) => <option key={s.name}>{s.name}</option>)}
+                </Select>
+              ) : r.type === "PROTOCOL" ? (
+                <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => patch(i, { value: e.target.value })}>
+                  <option value="">{tr("选择协议")}</option>
+                  {protocolValues.map((v) => <option key={v}>{v}</option>)}
                 </Select>
               ) : r.type === "FINAL" ? (
                 <span className="flex-1 text-xs text-zinc-500">{tr("其余所有流量")}</span>

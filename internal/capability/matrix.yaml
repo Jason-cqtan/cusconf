@@ -225,6 +225,7 @@ clients:
       hysteria2.gecko: {ios: never}
       group.smart: {ios: never}
       group.category: {ios: never}
+      rule.protocol: {ios: "3.1.7"}
 
   qx:
     label: Quantumult X
@@ -256,3 +257,4 @@ clients:
       group.smart: {ios: never}
       group.category: {ios: never}
       group.include-other-group: {}
+      rule.protocol: {ios: never}

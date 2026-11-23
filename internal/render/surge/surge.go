@@ -561,6 +561,12 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 			line += fmt.Sprintf(",update-interval=%d", rs.Interval)
 		}
 		return line, true
+	case "PROTOCOL":
+		t, v, ok := render.ProtocolRule(c, r.Value, w)
+		if !ok {
+			return "", false
+		}
+		return fmt.Sprintf("%s,%s,%s", t, v, policy), true
 	}
 	line := fmt.Sprintf("%s,%s,%s", r.Type, r.Value, policy)
 	if r.NoResolve {

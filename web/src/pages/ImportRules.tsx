@@ -7,8 +7,14 @@ import { tr } from "../i18n";
 export const ruleTypes = [
   "RULE-SET", "DOMAIN-SET", "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD",
   "IP-CIDR", "IP-CIDR6", "IP-ASN", "GEOIP", "SRC-IP", "DST-PORT", "IN-PORT",
-  "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT", "URL-REGEX", "FINAL",
+  "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT", "URL-REGEX", "PROTOCOL", "FINAL",
 ];
+
+/**
+ * PROTOCOL rule values (Surge names, plus TLS and MTPROTO from Stash). Clients that
+ * lack one skip the rule with a warning; see internal/render/protocol.go.
+ */
+export const protocolValues = ["HTTP", "HTTPS", "TLS", "TCP", "UDP", "QUIC", "STUN", "DOH", "DOH3", "DOQ", "MTPROTO"];
 
 const aliases: Record<string, string> = { MATCH: "FINAL", "DEST-PORT": "DST-PORT", "SRC-IP-CIDR": "SRC-IP", "IP6-CIDR": "IP-CIDR6" };
 
@@ -65,9 +71,14 @@ export function parseRules(text: string): ParseResult {
       errors.push({ line, text: raw.trim(), reason: tr("格式应为 类型,值,策略") });
       return;
     }
+    if (type === "PROTOCOL" && !protocolValues.includes(parts[1].toUpperCase())) {
+      errors.push({ line, text: raw.trim(), reason: tr("不支持的协议 {0}，可用：{1}", parts[1], protocolValues.join(" / ")) });
+      return;
+    }
     const opts = parts.slice(3).map((o) => o.toLowerCase());
     // Domains pasted as links ("http://example.com") lose the scheme and path.
-    const value = type.startsWith("DOMAIN") && type !== "DOMAIN-SET" ? parts[1].replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "") : parts[1];
+    const value = type === "PROTOCOL" ? parts[1].toUpperCase()
+      : type.startsWith("DOMAIN") && type !== "DOMAIN-SET" ? parts[1].replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "") : parts[1];
     const rule: Rule = { type, value, policy: parts[2], noResolve: opts.includes("no-resolve") || undefined };
     if (type === "RULE-SET" || type === "DOMAIN-SET") {
       if (!/^https?:\/\//i.test(parts[1])) {
@@ -153,7 +164,7 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
         <>
           <Button onClick={close}>{tr("取消")}</Button>
           <Button variant="primary" disabled={!result.rules.length} onClick={() => { onImport(result.rules, result.newSets, position); close(); }}>
-            {tr("导入")} {result.rules.length || ""} {tr("条")}
+            {result.rules.length ? tr("导入 {0} 条", result.rules.length) : tr("导入")}
           </Button>
         </>
       }

@@ -752,6 +752,16 @@ func routeConfig(c *render.Config, groups []render.Group, proxyTag string, w *re
 			m = obj{{"rule_set", []string{tag}}}
 		case "DOMAIN-WILDCARD":
 			m = obj{{"domain_regex", []string{WildcardRegex(r.Value)}}}
+		case "PROTOCOL":
+			t, v, ok := render.ProtocolRule(c, r.Value, w)
+			if !ok {
+				continue
+			}
+			if t == "NETWORK" {
+				m = obj{{"network", v}}
+			} else {
+				m = obj{{"protocol", []string{v}}}
+			}
 		default:
 			f, ok := ruleField[t]
 			if !ok {
