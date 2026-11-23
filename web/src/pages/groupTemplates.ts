@@ -31,30 +31,52 @@ export interface GroupTemplate {
 const proc = (...paths: string[]) => paths.map((p) => `PROCESS-NAME,${p}`).join("\n");
 
 const claudeRules = `
-# Claude 补充域名
+# Claude 主域名（anthropic.com、claude.ai 已在 Claude 规则集里）
 DOMAIN-SUFFIX,claude.com
 DOMAIN-SUFFIX,clau.de
+DOMAIN-SUFFIX,claude.app
+DOMAIN-SUFFIX,claude.dev
+DOMAIN-SUFFIX,claude.site
+DOMAIN-SUFFIX,claude.new
+DOMAIN-SUFFIX,claudeusercontent.com
 DOMAIN-SUFFIX,claudemcpclient.com
 DOMAIN-SUFFIX,claudemcpcontent.com
-DOMAIN-SUFFIX,claudeusercontent.com
+DOMAIN-SUFFIX,claudeacademy.com
+DOMAIN-SUFFIX,claudepages.dev
+DOMAIN-SUFFIX,claudestudio.com
+DOMAIN-SUFFIX,chatbotclaude.com
+DOMAIN-SUFFIX,ant.dev
+DOMAIN-SUFFIX,antspace.dev
+DOMAIN-SUFFIX,anthropic.team
 # CDN 和静态资源
-DOMAIN,servd-anthropic-website.b-cdn.net
-DOMAIN,anthropic.com.cdn.cloudflare.net
+DOMAIN-SUFFIX,servd-anthropic-website.b-cdn.net
+DOMAIN-SUFFIX,anthropic.com.cdn.cloudflare.net
 # 认证 / 内容
-DOMAIN,anthropic.auth0.com
-DOMAIN,anthropic-com.ghost.io
+DOMAIN-SUFFIX,anthropic.auth0.com
+DOMAIN-SUFFIX,anthropic-com.ghost.io
 # 监控和遥测
 DOMAIN-SUFFIX,sentry.io
 DOMAIN-SUFFIX,statsigapi.net
-DOMAIN,browser-intake-us5-datadoghq.com
+DOMAIN-SUFFIX,r.stripe.com
+DOMAIN-SUFFIX,fcmtoken.googleapis.com
 DOMAIN-KEYWORD,datadog
 DOMAIN-KEYWORD,sift
 # 客服 / 第三方 widget
 DOMAIN-SUFFIX,intercom.io
 DOMAIN-SUFFIX,intercomcdn.com
-DOMAIN,cdn.usefathom.com
+DOMAIN-SUFFIX,intercomassets.com
+DOMAIN-SUFFIX,intercom-messenger.com
+DOMAIN-SUFFIX,cdn.usefathom.com
+# 人机验证 / KYC
+DOMAIN-SUFFIX,hcaptcha.com
+DOMAIN-SUFFIX,challenges.cloudflare.com
+DOMAIN-SUFFIX,withpersona.com
+DOMAIN-SUFFIX,yoti.com
 # IP 段 / ASN 兜底
 IP-CIDR,160.79.104.0/21,no-resolve
+IP-CIDR,34.8.0.0/16,no-resolve
+IP-CIDR,153.61.208.0/20,no-resolve
+IP-CIDR,153.61.224.0/22,no-resolve
 IP-CIDR6,2607:6bc0::/32,no-resolve
 IP-ASN,399358,no-resolve
 `;
