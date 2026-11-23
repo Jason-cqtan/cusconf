@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ClipboardPaste, DatabaseZap, MessageSquareText, Plus, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, ClipboardPaste, CornerDownRight, DatabaseZap, MessageSquareText, MoveVertical, Plus, Trash2, X } from "lucide-react";
 import type { Rule, RuleSet } from "../api";
 import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx, useFlash } from "../components/ui";
 import { SortableList } from "../components/Sortable";
@@ -31,6 +31,40 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
   const [flashId, flash] = useFlash();
   // Rules whose comment field is open although still empty.
   const [commenting, setCommenting] = useState<Set<string>>(new Set());
+  // Rules ticked for a batch move (by id), the last one clicked (anchor for shift-click ranges),
+  // and whether the rows offer "move here" targets.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const picked = ids.filter((id) => selected.has(id));
+  const clearSelection = () => { setSelected(new Set()); setPicking(false); };
+
+  const toggle = (i: number, shift: boolean) => {
+    const id = ids[i];
+    const a = anchor ? ids.indexOf(anchor) : -1;
+    const n = new Set(selected);
+    if (shift && a >= 0) {
+      const on = !selected.has(id);
+      for (let j = Math.min(a, i); j <= Math.max(a, i); j++) on ? n.add(ids[j]) : n.delete(ids[j]);
+    } else if (n.has(id)) n.delete(id);
+    else n.add(id);
+    setSelected(n);
+    setAnchor(id);
+    if (!n.size) setPicking(false);
+  };
+
+  /** Moves the selected rules, keeping their order, in front of the rule at `before` (rules.length = the end). */
+  const moveSelected = (before: number) => {
+    const sel = (i: number) => selected.has(ids[i]);
+    const moving = p.rules.filter((_, i) => sel(i));
+    const rest = p.rules.filter((_, i) => !sel(i));
+    const at = p.rules.slice(0, before).filter((_, i) => !sel(i)).length;
+    setRules([...rest.slice(0, at), ...moving, ...rest.slice(at)]);
+    setPicking(false);
+    if (moving[0]?._uid) flash(moving[0]._uid);
+  };
+  const fin = p.rules.findIndex((x) => x.type === "FINAL");
+  const toBottom = () => moveSelected(fin >= 0 && !selected.has(ids[fin]) ? fin : p.rules.length);
 
   return (
     <section className="space-y-2">
@@ -71,10 +105,22 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
           items={p.rules}
           ids={ids}
           onReorder={setRules}
+          // Dragging a ticked rule takes every ticked rule along.
+          onMove={(from, to) => {
+            if (!selected.has(ids[from]) || picked.length < 2) return false;
+            moveSelected(to > from ? to + 1 : to);
+            return true;
+          }}
           render={(r, i, handle) => (
-            <div data-flash={r._uid} className={cx("border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2", flashId === r._uid && "flash-row")}>
+            <div data-flash={r._uid} className={cx("border-b border-zinc-100 dark:border-zinc-800 px-3 py-2", selected.has(ids[i]) ? "bg-indigo-50/70 dark:bg-indigo-950/40" : "bg-white dark:bg-zinc-900", flashId === r._uid && "flash-row")}>
+            {picking && !selected.has(ids[i]) && (
+              <button type="button" onClick={() => moveSelected(i)}
+                className="mb-1 ml-11 flex items-center gap-1 rounded border border-dashed border-indigo-400 px-2 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950">
+                <CornerDownRight size={12} /> {tr("移到这条上方")}
+              </button>
+            )}
             {commenting.has(ids[i]) ? (
-              <div className="mb-1 flex items-center gap-1.5 pl-6 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+              <div className="mb-1 flex items-center gap-1.5 pl-11 font-mono text-xs text-emerald-700 dark:text-emerald-400">
                 #
                 <input className="min-w-0 flex-1 border-b border-emerald-500/60 bg-transparent py-0.5 font-sans outline-none" value={r.comment ?? ""} placeholder={tr("备注，生成配置时写在这条规则上方")} autoFocus
                   onChange={(e) => patch(i, { comment: e.target.value || undefined })}
@@ -84,11 +130,13 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
             ) : r.comment && (
               // A comment, not a rule: shown like a code comment above its rule; click to edit.
               <button type="button" title={tr("点击编辑备注")} onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}
-                className="mb-1 block max-w-full truncate pl-6 text-left font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                className="mb-1 block max-w-full truncate pl-11 text-left font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
                 # <span className="font-sans">{r.comment}</span>
               </button>
             )}
             <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+              <input type="checkbox" className="shrink-0" aria-label={tr("选择")} checked={selected.has(ids[i])}
+                onChange={() => {}} onClick={(e) => toggle(i, e.shiftKey)} />
               {handle}
               <Select className="h-8 w-48 shrink-0 text-xs" value={r.type} onChange={(e) => patch(i, { type: e.target.value, value: "" })}>
                 {ruleTypes.map((t) => <option key={t}>{t}</option>)}
@@ -117,6 +165,22 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
           )}
         />
       </Card>
+      {picked.length > 0 && (
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs dark:border-indigo-900 shadow-lg dark:bg-indigo-950">
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={picked.length === ids.length} ref={(el) => { if (el) el.indeterminate = picked.length < ids.length; }}
+              onChange={(e) => (e.target.checked ? setSelected(new Set(ids)) : clearSelection())} />
+            {tr("已选 {0} 条", picked.length)}
+          </label>
+          <span className="text-zinc-500">{picking ? tr("点击目标规则上的「移到这条上方」") : tr("拖动已选规则可整组移动，Shift 点击可连选")}</span>
+          <div className="ml-auto flex gap-1.5">
+            <Button size="sm" onClick={() => moveSelected(0)}><ArrowUpToLine size={14} /> {tr("移到顶部")}</Button>
+            <Button size="sm" onClick={toBottom}><ArrowDownToLine size={14} /> {tr("移到底部")}</Button>
+            <Button size="sm" variant={picking ? "primary" : "secondary"} onClick={() => setPicking((v) => !v)}><MoveVertical size={14} /> {tr("移到指定位置")}</Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection} aria-label={tr("取消选择")} title={tr("取消选择")}><X size={14} /></Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

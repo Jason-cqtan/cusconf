@@ -6,10 +6,12 @@ import { GripVertical } from "lucide-react";
 import { tr } from "../i18n";
 
 /** Vertical drag-to-reorder list. `ids` must be unique and stable per item. */
-export function SortableList<T>({ items, ids, onReorder, render }: {
+export function SortableList<T>({ items, ids, onReorder, onMove, render }: {
   items: T[];
   ids: string[];
   onReorder: (items: T[]) => void;
+  /** Handles a drop instead of onReorder when it returns true (e.g. to move several items at once). */
+  onMove?: (from: number, to: number) => boolean;
   render: (item: T, index: number, handle: ReactNode) => ReactNode;
 }) {
   const sensors = useSensors(
@@ -20,7 +22,8 @@ export function SortableList<T>({ items, ids, onReorder, render }: {
     if (!e.over || e.active.id === e.over.id) return;
     const from = ids.indexOf(String(e.active.id));
     const to = ids.indexOf(String(e.over.id));
-    if (from >= 0 && to >= 0) onReorder(arrayMove(items, from, to));
+    if (from < 0 || to < 0 || onMove?.(from, to)) return;
+    onReorder(arrayMove(items, from, to));
   };
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
