@@ -106,16 +106,16 @@ export default function ProfileEditor({ id, onBack, onSaved }: { id: string; onB
   return (
     <div className="space-y-4" style={{ "--sticky-h": `${barH}px` } as CSSProperties}>
       <StickyBar barRef={setBar} className="border-b border-zinc-200 dark:border-zinc-800">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => (!dirty || confirm(tr("有未保存的修改，确定离开？"))) && onBack()}><ArrowLeft size={16} /></Button>
-        <Input className="max-w-xs font-medium" value={p.name} onChange={(e) => update((o) => ({ ...o, name: e.target.value }))} placeholder={tr("配置名称")} />
-        <span className="text-xs text-zinc-500"><NodeCount count={ctx.nodes.length} /> · {p.groups.length} {tr("个策略组")}</span>
-        <Button variant="primary" className="ml-auto" disabled={saving || !p.name} onClick={save}>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" className="shrink-0" aria-label={tr("返回")} onClick={() => (!dirty || confirm(tr("有未保存的修改，确定离开？"))) && onBack()}><ArrowLeft size={16} /></Button>
+        <Input className="min-w-0 flex-1 font-medium sm:max-w-xs" value={p.name} onChange={(e) => update((o) => ({ ...o, name: e.target.value }))} placeholder={tr("配置名称")} />
+        <span className="hidden text-xs text-zinc-500 sm:inline"><NodeCount count={ctx.nodes.length} /> · {p.groups.length} {tr("个策略组")}</span>
+        <Button variant="primary" className="shrink-0 sm:ml-auto" disabled={saving || !p.name} onClick={save}>
           <Save size={16} /> {saving ? tr("保存中…") : dirty ? tr("保存") : tr("已保存")}
         </Button>
       </div>
       {err && <div className="mt-3"><ErrorText error={err} /></div>}
-      <div className="mt-3 flex gap-1 overflow-x-auto overflow-y-hidden">
+      <div className="mt-2 flex gap-1 overflow-x-auto overflow-y-hidden sm:mt-3">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -232,7 +232,7 @@ function GeneralEditor({ profile: p, update }: { profile: EditableProfile; updat
   ] as const;
   return (
     <div className="space-y-8">
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Field label={tr("DNS 服务器")} hint={tr("逗号分隔；Surge 可用 system")}><Input value={list(g.dns)} onChange={(e) => set({ dns: parse(e.target.value) })} placeholder="system, 223.5.5.5, 119.29.29.29" /></Field>
       <Field label={tr("代理测速 URL")} hint={tr("Surge 配置中 https:// 会改为 http://：旧版 Surge（如 Mac 6.4）遇到 https 测速地址会整份配置报错")}><Input value={g.testUrl ?? ""} onChange={(e) => set({ testUrl: e.target.value })} placeholder="https://cp.cloudflare.com/generate_204" /></Field>
       <Field label={tr("直连测速 URL（Surge）")} hint={tr("https:// 同样会改为 http://")}><Input value={g.internetTestUrl ?? ""} onChange={(e) => set({ internetTestUrl: e.target.value })} placeholder="http://www.apple.com/library/test/success.html" /></Field>

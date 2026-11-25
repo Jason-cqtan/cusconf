@@ -55,7 +55,7 @@ export default function TokensPage() {
       <ErrorText error={err} />
       {!profiles.length && <Empty>{tr("请先创建一份配置。")}</Empty>}
       {profiles.length > 0 && items.length === 0 && <Empty>{tr("还没有订阅链接。")}</Empty>}
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {items.map((t) => {
           const st = status(t);
           return (
@@ -67,7 +67,7 @@ export default function TokensPage() {
                 <Badge>{profileName(t.profileId)}</Badge>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs" title={t.short ? tr("完整链接：{0}", subURL(t.token)) : undefined}>{tokenURL(t)}</code>
+                <code className="min-w-0 basis-full truncate rounded sm:basis-0 sm:flex-1 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs" title={t.short ? tr("完整链接：{0}", subURL(t.token)) : undefined}>{tokenURL(t)}</code>
                 <CopyButton text={tokenURL(t)} />
                 {t.short
                   ? <Button size="sm" variant="ghost" title={tr("删除短链接（已用短链接导入的客户端将无法更新），改回完整链接")} onClick={async () => { if (confirm(tr("删除短链接？用短链接导入的客户端将无法再更新。"))) { await api.deleteShort(t.token); load(); } }}><X size={14} /> {tr("短链")}</Button>

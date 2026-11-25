@@ -295,12 +295,11 @@ func Generate(req Request) (render.Result, error) {
 }
 
 func hasRuleSets(p *profile.Profile) bool {
+	found := false
 	for _, r := range p.Rules {
-		if r.Type == "RULE-SET" {
-			return true
-		}
+		r.Walk(func(s profile.Rule) { found = found || s.Type == "RULE-SET" })
 	}
-	return false
+	return found
 }
 
 // dropLocal removes local (loopback) nodes, which only work on the device running
@@ -369,21 +368,83 @@ func sourceURLs(sources []string, subs map[string]string) []string {
 // adaptProcessRules drops process rules on mobile clients (iOS has no process
 // matching) and, outside Surge, turns PROCESS-NAME rules holding a full path into
 // PROCESS-PATH, since mihomo / sing-box match PROCESS-NAME against the bare name only.
+//
+// Inside logical rules a process condition can never match on iOS: an AND holding one
+// never matches and is dropped, an OR drops just that branch, and a NOT of it always
+// matches, so it is dropped from an AND and makes an OR always match (dropped as well,
+// since its policy would then swallow everything after it).
 func adaptProcessRules(rules []profile.Rule, t capability.Target) []profile.Rule {
 	out := make([]profile.Rule, 0, len(rules))
 	for _, r := range rules {
-		if r.Type == "PROCESS-NAME" || r.Type == "PROCESS-PATH" {
-			if t.Platform == "ios" {
-				continue
-			}
-			if r.Type == "PROCESS-NAME" && t.Client != capability.Surge && strings.Contains(r.Value, "/") {
-				r.Type = "PROCESS-PATH"
-				r.Value = strings.TrimSuffix(r.Value, "/")
-			}
+		if a, ok := adaptProcess(r, t); ok == processKeep {
+			out = append(out, a)
 		}
-		out = append(out, r)
 	}
 	return out
+}
+
+type processFate int
+
+const (
+	processKeep   processFate = iota
+	processNever              // the rule can never match here
+	processAlways             // the rule always matches here
+)
+
+func adaptProcess(r profile.Rule, t capability.Target) (profile.Rule, processFate) {
+	if profile.IsLogical(r.Type) {
+		return adaptLogicalProcess(r, t)
+	}
+	if r.Type == "PROCESS-NAME" || r.Type == "PROCESS-PATH" {
+		if t.Platform == "ios" {
+			return r, processNever
+		}
+		if r.Type == "PROCESS-NAME" && t.Client != capability.Surge && strings.Contains(r.Value, "/") {
+			r.Type = "PROCESS-PATH"
+			r.Value = strings.TrimSuffix(r.Value, "/")
+		}
+		// Surge matches * and ? in process rules; mihomo and sing-box compare exactly
+		// and take a regex instead (PROCESS-PATH-REGEX / process_path_regex).
+		if strings.ContainsAny(r.Value, "*?") {
+			switch t.Client {
+			case capability.ClashMeta, capability.FlClash, capability.SingBox:
+				r.Type += "-REGEX"
+				r.Value = singbox.WildcardRegex(r.Value)
+			}
+		}
+	}
+	return r, processKeep
+}
+
+func adaptLogicalProcess(r profile.Rule, t capability.Target) (profile.Rule, processFate) {
+	typ := strings.ToUpper(r.Type)
+	var subs []profile.Rule
+	for _, s := range r.Rules {
+		a, fate := adaptProcess(s, t)
+		if typ == "NOT" {
+			switch fate {
+			case processNever:
+				return r, processAlways
+			case processAlways:
+				return r, processNever
+			}
+		}
+		switch {
+		case fate == processKeep:
+			subs = append(subs, a)
+		case typ == "AND" && fate == processNever, typ == "OR" && fate == processAlways:
+			return r, fate
+		}
+		// AND ignores an always-true condition, OR an never-matching one.
+	}
+	if len(subs) == 0 {
+		if typ == "AND" {
+			return r, processAlways
+		}
+		return r, processNever
+	}
+	r.Rules = subs
+	return r, processKeep
 }
 
 // applyOrder moves names listed in order to the front, in that order; the rest keep their relative order.

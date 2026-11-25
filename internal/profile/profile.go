@@ -132,12 +132,75 @@ type Group struct {
 }
 
 type Rule struct {
-	Type      string `json:"type"`  // RULE-SET, DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOIP, PROCESS-NAME, FINAL
-	Value     string `json:"value"` // RULE-SET: rule set name
+	Type      string `json:"type"`  // RULE-SET, DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOIP, PROCESS-NAME, AND, OR, NOT, FINAL
+	Value     string `json:"value"` // RULE-SET: rule set name; unused by AND / OR / NOT
 	Policy    string `json:"policy"`
 	NoResolve bool   `json:"noResolve,omitempty"`
+	// Rules are the conditions of a logical rule (AND / OR / NOT): rules without a policy,
+	// possibly logical themselves. NOT takes exactly one.
+	Rules []Rule `json:"rules,omitempty"`
 	// Comment is written above the rule in the generated config (one "#" line per line).
 	Comment string `json:"comment,omitempty"`
+}
+
+// LogicalTypes are the rule types that combine other rules.
+var LogicalTypes = []string{"AND", "OR", "NOT"}
+
+// IsLogical reports whether a rule type combines conditions (AND / OR / NOT).
+func IsLogical(t string) bool { return slices.Contains(LogicalTypes, strings.ToUpper(t)) }
+
+// Walk calls f for the rule and, depth first, for every condition of a logical rule.
+func (r Rule) Walk(f func(Rule)) {
+	f(r)
+	for _, s := range r.Rules {
+		s.Walk(f)
+	}
+}
+
+// Expr is the rule without its policy in Surge syntax, e.g. "AND,((PROTOCOL,STUN),(DOMAIN,a.com))".
+// Warnings use it to name a rule.
+func (r Rule) Expr() string {
+	if !IsLogical(r.Type) {
+		return r.Type + "," + r.Value
+	}
+	parts := make([]string, len(r.Rules))
+	for i, s := range r.Rules {
+		parts[i] = "(" + s.Expr() + ")"
+	}
+	return strings.ToUpper(r.Type) + ",(" + strings.Join(parts, ",") + ")"
+}
+
+// maxLogicalDepth bounds nesting of logical rules (AND inside OR inside …).
+const maxLogicalDepth = 4
+
+// validateConditions checks the conditions of a logical rule.
+func validateConditions(r Rule, sets map[string]bool, depth int) error {
+	if depth > maxLogicalDepth {
+		return fmt.Errorf("logical rules nest deeper than %d levels", maxLogicalDepth)
+	}
+	t := strings.ToUpper(r.Type)
+	switch {
+	case t == "NOT" && len(r.Rules) != 1:
+		return fmt.Errorf("NOT takes exactly one condition, got %d", len(r.Rules))
+	case len(r.Rules) == 0:
+		return fmt.Errorf("%s has no conditions", t)
+	}
+	for _, s := range r.Rules {
+		st := strings.ToUpper(s.Type)
+		switch {
+		case st == "" || st == "FINAL" || st == "MATCH":
+			return fmt.Errorf("%s: condition type %q is not allowed", t, s.Type)
+		case IsLogical(st):
+			if err := validateConditions(s, sets, depth+1); err != nil {
+				return err
+			}
+		case strings.TrimSpace(s.Value) == "":
+			return fmt.Errorf("%s: condition %s has no value", t, st)
+		case st == "RULE-SET" && !sets[s.Value]:
+			return fmt.Errorf("unknown rule set %q", s.Value)
+		}
+	}
+	return nil
 }
 
 // CommentLines splits a rule comment into trimmed, non-empty lines.
@@ -290,6 +353,11 @@ func (p *Profile) Validate() error {
 		}
 		if r.Type == "RULE-SET" && !sets[r.Value] {
 			return fmt.Errorf("rule %d: unknown rule set %q", i+1, r.Value)
+		}
+		if IsLogical(r.Type) {
+			if err := validateConditions(r, sets, 1); err != nil {
+				return fmt.Errorf("rule %d: %w", i+1, err)
+			}
 		}
 	}
 	return nil

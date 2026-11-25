@@ -38,11 +38,12 @@ export default function App() {
   const [page, ...rest] = route.split("/");
   const current = (pages.find((p) => p.id === page)?.id ?? "sources") as PageId;
 
+  // Phones: a slim top bar and a bottom tab bar; md and up: a sidebar.
   return (
     <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
-      <aside className="flex shrink-0 items-center gap-1 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 md:w-52 md:flex-col md:items-stretch md:border-b-0 md:border-r md:py-4">
-        <div className="mr-3 px-2 font-semibold tracking-tight md:mb-4 md:mr-0">cusconf</div>
-        <nav className="flex flex-1 gap-1 overflow-x-auto md:flex-col">
+      <aside className="flex shrink-0 items-center gap-1 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] md:w-52 md:flex-col md:items-stretch md:border-b-0 md:border-r md:py-4">
+        <div className="mr-auto px-2 font-semibold tracking-tight md:mr-0 md:mb-4">cusconf</div>
+        <nav className="hidden flex-1 gap-1 md:flex md:flex-col">
           {pages.map((p) => (
             <button
               key={p.id}
@@ -57,7 +58,7 @@ export default function App() {
           ))}
         </nav>
         <PrefsSwitch className="shrink-0 md:mb-2 md:px-1" />
-        <Button variant="ghost" size="sm" className="md:justify-start" onClick={() => { session.clear(); setAuthed(false); }}>
+        <Button variant="ghost" size="sm" className="md:justify-start" aria-label={tr("退出")} onClick={() => { session.clear(); setAuthed(false); }}>
           <LogOut size={14} /> <span className="hidden md:inline">{tr("退出")}</span>
         </Button>
       </aside>
@@ -67,6 +68,17 @@ export default function App() {
         {current === "profiles" && <ProfilesPage id={rest[0]} go={go} />}
         {current === "tokens" && <TokensPage />}
       </main>
+      <nav className="grid shrink-0 grid-cols-4 border-t border-zinc-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden dark:border-zinc-800 dark:bg-zinc-900">
+        {pages.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => go(p.id)}
+            className={cx("flex flex-col items-center gap-0.5 py-1.5 text-[11px]", current === p.id ? "font-medium text-indigo-600 dark:text-indigo-400" : "text-zinc-500 dark:text-zinc-400")}
+          >
+            <p.icon size={20} /> {p.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

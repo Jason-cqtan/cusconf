@@ -226,6 +226,7 @@ clients:
       group.smart: {ios: never}
       group.category: {ios: never}
       rule.protocol: {ios: "3.1.7"}
+      rule.logical: {verified: false}   # AND / OR / NOT; rule sets cannot be used inside them
 
   qx:
     label: Quantumult X
@@ -258,3 +259,4 @@ clients:
       group.category: {ios: never}
       group.include-other-group: {}
       rule.protocol: {ios: never}
+      rule.logical: {ios: never}

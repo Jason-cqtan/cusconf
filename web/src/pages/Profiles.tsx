@@ -33,7 +33,7 @@ function ProfileList({ go }: { go: (p: string) => void }) {
       {items.length === 0 ? (
         <Empty>{tr("还没有配置。新建时会预置常用的策略组与规则集，可以在此基础上修改。")}</Empty>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((p) => (
             <Card key={p.id} className="flex flex-col gap-3 p-4">
               <div className="font-medium">{p.name}</div>

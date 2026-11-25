@@ -81,15 +81,26 @@ func Render(c *render.Config) render.Result {
 			warnedOrder = true
 			w.Add("rule", r.Type+","+r.Value, "Loon matches [Rule] before [Remote Rule]; local rules after a rule set now come first")
 		}
-		typ, val := r.Type, r.Value
-		if typ == "PROTOCOL" {
-			var ok bool
-			if typ, val, ok = render.ProtocolRule(c, val, &w); !ok {
-				continue
+		if profile.IsLogical(r.Type) {
+			expr, ok := render.LogicalRule(c, r, &w, func(s profile.Rule) (render.Cond, bool) {
+				if s.Type == "RULE-SET" {
+					// Remote rules live in [Remote Rule]; a local rule cannot refer to them.
+					w.Add("rule", s.Expr(), "Loon logical rules cannot use rule sets")
+					return render.Cond{}, false
+				}
+				return loonCond(c, s, &w)
+			})
+			if ok {
+				local = append(local, comments+expr+","+policy)
 			}
+			continue
 		}
-		line := fmt.Sprintf("%s,%s,%s", typ, val, policy)
-		if r.NoResolve {
+		cd, ok := loonCond(c, r, &w)
+		if !ok {
+			continue
+		}
+		line := fmt.Sprintf("%s,%s,%s", cd.Type, cd.Value, policy)
+		if cd.NoResolve {
 			line += ",no-resolve"
 		}
 		local = append(local, comments+line)
@@ -437,4 +448,13 @@ func or0(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// loonCond converts a plain local rule for Loon (PROTOCOL values are mapped).
+func loonCond(c *render.Config, r profile.Rule, w *render.Warnings) (render.Cond, bool) {
+	if r.Type == "PROTOCOL" {
+		t, v, ok := render.ProtocolRule(c, r.Value, w)
+		return render.Cond{Type: t, Value: v}, ok
+	}
+	return render.Cond{Type: r.Type, Value: r.Value, NoResolve: r.NoResolve}, true
 }

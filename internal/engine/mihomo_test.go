@@ -30,7 +30,7 @@ func TestMihomoParses(t *testing.T) {
 			rules = append(rules, r)
 		}
 	}
-	p.Rules = rules
+	p.Rules = append(logicalRules(), rules...) // AND / OR / NOT, with a process regex and no-resolve inside
 	res, err := Generate(Request{Profile: p, Nodes: nodes, Target: capability.Target{Client: capability.ClashMeta}, Mirror: fakeMirror})
 	if err != nil {
 		t.Fatal(err)

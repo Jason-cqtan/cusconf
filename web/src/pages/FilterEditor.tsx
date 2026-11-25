@@ -47,7 +47,7 @@ export function FilterEditor({ filter, onChange, ctx, showNames = true, probeOpe
           <Chips options={ctx.sources.map((s) => ({ value: s.id, label: s.name }))} value={f.sources ?? []} onChange={(v) => set({ sources: v })} />
         </Field>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:col-span-2">
         <Field label={tr("名称包含（正则）")}><Input className="font-mono text-xs" value={f.include ?? ""} onChange={(e) => set({ include: e.target.value })} placeholder={tr("例如 (?i)netflix|nf")} /></Field>
         <Field label={tr("名称排除（正则）")}><Input className="font-mono text-xs" value={f.exclude ?? ""} onChange={(e) => set({ exclude: e.target.value })} placeholder={tr("例如 过期|剩余|官网|倍率")} /></Field>
       </div>
@@ -110,7 +110,7 @@ function ProbeConditions({ f, set, ctx, defaultOpen }: { f: Filter; set: (p: Par
         </div>
         <Field label={tr("最低安全分（0–100，越大越安全；按来源分别设置，留空不限）")}>
           {scoreSrc.length === 0 ? <p className="text-xs text-zinc-500">{tr("还没有安全分数据，请先在「节点」页做完整测试。")}</p> : (
-            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {scoreSrc.map((src) => (
                 <label key={src} className="flex items-center gap-2 text-sm">
                   <span className="w-28 shrink-0 truncate text-xs text-zinc-600 dark:text-zinc-400">{src} ≥</span>

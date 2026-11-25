@@ -137,7 +137,16 @@ export interface Group {
   category?: string;
 }
 
-export interface Rule { type: string; value: string; policy: string; noResolve?: boolean; /** Written as "# …" above the rule. */ comment?: string }
+export interface Rule {
+  type: string;
+  value: string;
+  policy: string;
+  noResolve?: boolean;
+  /** Conditions of an AND / OR / NOT rule: rules without a policy, possibly logical themselves. */
+  rules?: Rule[];
+  /** Written as "# …" above the rule. */
+  comment?: string;
+}
 
 export interface RuleSet {
   name: string;

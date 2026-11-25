@@ -88,6 +88,10 @@ func Render(c *render.Config) render.Result {
 				comments, u, Name(rs.Name), pol, or0(rs.Interval, 86400)))
 			continue
 		}
+		if profile.IsLogical(r.Type) {
+			w.Add("rule", r.Expr(), "logical rules %s; skipped", c.Req("rule.logical"))
+			continue
+		}
 		t, ok := ruleType[strings.ToUpper(r.Type)]
 		if !ok {
 			w.Add("rule", r.Type+","+r.Value, "rule type %s not supported by Quantumult X; skipped", r.Type)

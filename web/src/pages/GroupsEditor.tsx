@@ -163,19 +163,21 @@ function GroupCard({ g, flashing, handle, expanded, onToggle, onChange, onRemove
         <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onToggle}>
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           <GroupIcon url={g.icon} />
-          <span className="truncate font-medium">{g.name}</span>
+          <span className="min-w-0 truncate font-medium">{g.name}</span>
           <Badge color={typeColor[g.type]}>{g.type}</Badge>
-          <span className="text-xs text-zinc-500 whitespace-nowrap" title={tr("直接包含 {0} 个节点，加上包含的策略组中的节点共 {1} 个（去重）", nodeCount, totalNodes)}>
+          <span className="hidden text-xs text-zinc-500 whitespace-nowrap sm:inline" title={tr("直接包含 {0} 个节点，加上包含的策略组中的节点共 {1} 个（去重）", nodeCount, totalNodes)}>
             {otherCount > 0 && tr("{0} 个策略 · ", otherCount)}{totalNodes} {tr("个节点")}
             {totalNodes !== nodeCount && nodeCount > 0 && tr("（直接 {0}）", nodeCount)}
           </span>
+          {/* Phones: just the node count. */}
+          <span className="shrink-0 text-xs text-zinc-500 sm:hidden" title={tr("直接包含 {0} 个节点，加上包含的策略组中的节点共 {1} 个（去重）", nodeCount, totalNodes)}>{totalNodes}</span>
           {g.hidden && <Badge>{tr("隐藏")}</Badge>}
         </button>
         <Button variant="danger" size="sm" onClick={onRemove} aria-label={tr("删除")}><Trash2 size={14} /></Button>
       </div>
       {expanded && (
         <div className="space-y-5 p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label={tr("名称")}><Input value={g.name} onChange={(e) => onChange({ name: e.target.value })} /></Field>
             <Field label={tr("类型")} hint={groupTypes.find((t) => t.value === g.type)?.hint}>
               <Select value={g.type} onChange={(e) => onChange({ type: e.target.value as GroupType })}>
@@ -236,7 +238,7 @@ function GroupCard({ g, flashing, handle, expanded, onToggle, onChange, onRemove
           </div>
 
           {auto && (
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <Field label={tr("测速间隔（秒）")}><Input type="number" value={g.interval ?? ""} placeholder="600" onChange={(e) => onChange({ interval: +e.target.value || undefined })} /></Field>
               {(g.type === "url-test" || g.type === "smart") && <Field label={tr("容差（ms）")}><Input type="number" value={g.tolerance ?? ""} placeholder="100" onChange={(e) => onChange({ tolerance: +e.target.value || undefined })} /></Field>}
               <Field label={tr("超时（秒）")}><Input type="number" value={g.timeout ?? ""} onChange={(e) => onChange({ timeout: +e.target.value || undefined })} /></Field>

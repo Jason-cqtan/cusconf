@@ -113,7 +113,7 @@ export function TestDetail({ r, onClose }: { r: TestResult | null; onClose: () =
           {r.exit && (
             <div>
               <h4 className="mb-1 font-medium">{tr("出口 IP")}</h4>
-              <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                 <span>{tr("IP：")}<code>{r.exit.ip ?? "—"}</code></span>
                 <span>{tr("地区：")}{r.exit.country ?? "—"} {r.exit.city}</span>
                 <span>{tr("运营商：")}{r.exit.isp ?? "—"}</span>
@@ -154,7 +154,7 @@ export function TestDetail({ r, onClose }: { r: TestResult | null; onClose: () =
           {r.services && (
             <div>
               <h4 className="mb-1 font-medium">{tr("服务可用性")}</h4>
-              <div className="grid gap-1 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                 {services.filter((s) => r.services![s.id]).map((s) => {
                   const v = r.services![s.id];
                   return (
@@ -286,7 +286,7 @@ function SyncSettings({ s, set, save }: { s: TestSettings; set: (p: Partial<Test
           {tr("有些节点只接受中国大陆网络的连接，部署在境外的 cusconf 测不通它们。可以在能连上的地方（如家里的电脑）运行 cusconf 测试，再把结果推送到服务器；服务器本地测试失败时不会覆盖同步来的可用结果。")}
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <Field label={tr("推送到（对方 cusconf 地址）")}>
           <Input className="font-mono text-xs" placeholder="https://sub.example.com" value={sync.url ?? ""} onChange={(e) => setSync({ url: e.target.value.trim() || undefined })} />
         </Field>
@@ -338,7 +338,7 @@ function TestSettingsDialog({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} title={tr("测试设置")} wide footer={<><Button onClick={onClose}>{tr("取消")}</Button><Button variant="primary" onClick={save} disabled={!s}>{tr("保存")}</Button></>}>
       {!s ? <ErrorText error={err} /> : (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Field label={tr("并发数")}><Input type="number" min={1} max={64} value={s.concurrency} onChange={(e) => set({ concurrency: +e.target.value })} /></Field>
             <Field label={tr("单次请求超时（秒）")}><Input type="number" min={1} value={s.timeoutSec} onChange={(e) => set({ timeoutSec: +e.target.value })} /></Field>
             <Field label={tr("定时完整测试（小时）")} hint={tr("0 为关闭")}><Input type="number" min={0} value={s.scheduleHours} onChange={(e) => set({ scheduleHours: +e.target.value })} /></Field>

@@ -160,7 +160,7 @@ export function ExtraConfigEditor({ client, label, hint, value, onChange, placeh
   };
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <Field label={label} hint={hint}>
         <Textarea ref={ref} rows={12} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="min-h-72" />
       </Field>

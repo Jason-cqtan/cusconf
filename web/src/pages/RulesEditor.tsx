@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { ArrowDownToLine, ArrowUpToLine, ClipboardPaste, CornerDownRight, DatabaseZap, MessageSquareText, MoveVertical, Plus, Trash2, X } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Rule, RuleSet } from "../api";
 import { Badge, Button, Card, Field, Input, Modal, Select, Toggle, cx, useFlash } from "../components/ui";
 import { SortableList } from "../components/Sortable";
 import { uid, type EditableProfile, type EditableRule } from "./ProfileEditor";
 import { presetSources } from "./rulePresets";
 import { ImportRulesDialog, protocolValues, ruleTypes } from "./ImportRules";
+import { isLogical, mapRule, maxLogicalDepth, ruleExpr, usesRuleSet } from "./logicalRules";
 import MirrorDialog from "./MirrorDialog";
 import { tr } from "../i18n";
 
@@ -68,12 +70,9 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
 
   return (
     <section className="space-y-2">
-      <div className="flex items-end justify-between">
-        <div>
-          <h3 className="font-medium">{tr("规则")}</h3>
-          <p className="text-xs text-zinc-500">{tr("从上到下匹配。最后一条应为 FINAL（Stash 中输出为 MATCH）。")}</p>
-        </div>
-        <div className="flex gap-2">
+      <SectionHeader>
+        <h3 className="font-medium">{tr("规则")}</h3>
+        <div className="flex shrink-0 gap-2">
           <Button size="sm" onClick={() => setImporting(true)}><ClipboardPaste size={14} /> {tr("批量导入")}</Button>
           <Button size="sm" onClick={() => {
             const r: EditableRule = { type: "DOMAIN-SUFFIX", value: "", policy: p.groups[0]?.name ?? "DIRECT", _uid: uid() };
@@ -82,7 +81,8 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
             flash(r._uid!);
           }}><Plus size={14} /> {tr("添加规则")}</Button>
         </div>
-      </div>
+      </SectionHeader>
+      <p className="text-xs text-zinc-500">{tr("从上到下匹配。最后一条应为 FINAL（Stash 中输出为 MATCH）。")}</p>
       <ImportRulesDialog
         open={importing}
         onClose={() => setImporting(false)}
@@ -115,12 +115,12 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
             <div data-flash={r._uid} className={cx("border-b border-zinc-100 dark:border-zinc-800 px-3 py-2", selected.has(ids[i]) ? "bg-indigo-50/70 dark:bg-indigo-950/40" : "bg-white dark:bg-zinc-900", flashId === r._uid && "flash-row")}>
             {picking && !selected.has(ids[i]) && (
               <button type="button" onClick={() => moveSelected(i)}
-                className="mb-1 ml-11 flex items-center gap-1 rounded border border-dashed border-indigo-400 px-2 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950">
+                className="mb-1 flex items-center gap-1 rounded border border-dashed sm:ml-11 border-indigo-400 px-2 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950">
                 <CornerDownRight size={12} /> {tr("移到这条上方")}
               </button>
             )}
             {commenting.has(ids[i]) ? (
-              <div className="mb-1 flex items-center gap-1.5 pl-11 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+              <div className="mb-1 flex items-center gap-1.5 font-mono sm:pl-11 text-xs text-emerald-700 dark:text-emerald-400">
                 #
                 <input className="min-w-0 flex-1 border-b border-emerald-500/60 bg-transparent py-0.5 font-sans outline-none" value={r.comment ?? ""} placeholder={tr("备注，生成配置时写在这条规则上方")} autoFocus
                   onChange={(e) => patch(i, { comment: e.target.value || undefined })}
@@ -130,42 +130,42 @@ function RulesSection({ profile: p, update }: { profile: EditableProfile; update
             ) : r.comment && (
               // A comment, not a rule: shown like a code comment above its rule; click to edit.
               <button type="button" title={tr("点击编辑备注")} onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}
-                className="mb-1 block max-w-full truncate pl-11 text-left font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
+                className="mb-1 block max-w-full truncate text-left sm:pl-11 font-mono text-xs text-emerald-700 hover:underline dark:text-emerald-400">
                 # <span className="font-sans">{r.comment}</span>
               </button>
             )}
+            {/* On phones: type and actions, then the value on its own line, then the policy. */}
             <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <input type="checkbox" className="shrink-0" aria-label={tr("选择")} checked={selected.has(ids[i])}
                 onChange={() => {}} onClick={(e) => toggle(i, e.shiftKey)} />
               {handle}
-              <Select className="h-8 w-48 shrink-0 text-xs" value={r.type} onChange={(e) => patch(i, { type: e.target.value, value: "" })}>
+              <Select className="h-8 min-w-0 flex-1 text-xs sm:w-48 sm:flex-none sm:shrink-0" value={r.type} onChange={(e) => patch(i, changeType(r, e.target.value))}>
                 {ruleTypes.map((t) => <option key={t}>{t}</option>)}
               </Select>
-              {r.type === "RULE-SET" ? (
-                <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => patch(i, { value: e.target.value })}>
-                  <option value="">{tr("选择规则集")}</option>
-                  {p.ruleSets.map((s) => <option key={s.name}>{s.name}</option>)}
-                </Select>
-              ) : r.type === "PROTOCOL" ? (
-                <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => patch(i, { value: e.target.value })}>
-                  <option value="">{tr("选择协议")}</option>
-                  {protocolValues.map((v) => <option key={v}>{v}</option>)}
-                </Select>
-              ) : r.type === "FINAL" ? (
-                <span className="flex-1 text-xs text-zinc-500">{tr("其余所有流量")}</span>
-              ) : (
-                <Input className="h-8 min-w-0 flex-1 font-mono text-xs" value={r.value} onChange={(e) => patch(i, { value: e.target.value })} placeholder={r.type === "GEOIP" ? "CN" : "example.com"} />
-              )}
-              <Select className="h-8 w-44 shrink-0 text-xs" value={r.policy} onChange={(e) => patch(i, { policy: e.target.value })}>
+              <div className="order-2 flex w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+                {r.type === "FINAL" ? (
+                  <span className="flex-1 text-xs text-zinc-500">{tr("其余所有流量")}</span>
+                ) : isLogical(r.type) ? (
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-500" title={ruleExpr(r)}>{logicalHint(r.type)}</span>
+                ) : (
+                  <RuleValue r={r} ruleSets={p.ruleSets} onChange={(v) => patch(i, v)} />
+                )}
+              </div>
+              <Select className="order-3 h-8 min-w-0 flex-1 text-xs sm:order-none sm:w-44 sm:flex-none sm:shrink-0" value={r.policy} onChange={(e) => patch(i, { policy: e.target.value })}>
                 {policies.map((x) => <option key={x}>{x}</option>)}
               </Select>
-              {["IP-CIDR", "IP-CIDR6", "GEOIP", "RULE-SET"].includes(r.type) && (
-                <label className="flex items-center gap-1 text-xs whitespace-nowrap"><input type="checkbox" checked={!!r.noResolve} onChange={(e) => patch(i, { noResolve: e.target.checked })} />no-resolve</label>
+              {noResolveTypes.includes(r.type) && (
+                <label className="order-3 flex items-center gap-1 text-xs whitespace-nowrap sm:order-none"><input type="checkbox" checked={!!r.noResolve} onChange={(e) => patch(i, { noResolve: e.target.checked })} />no-resolve</label>
               )}
-              <Button variant="ghost" size="sm" className={r.comment ? "text-indigo-600" : "text-zinc-400"} title={tr("备注")} aria-label={tr("备注")}
-                onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}><MessageSquareText size={14} /></Button>
-              <Button variant="danger" size="sm" onClick={() => setRules(p.rules.filter((_, j) => j !== i))} aria-label={tr("删除")}><Trash2 size={14} /></Button>
+              <span className="order-1 flex shrink-0 sm:order-none">
+                <Button variant="ghost" size="sm" className={r.comment ? "text-indigo-600" : "text-zinc-400"} title={tr("备注")} aria-label={tr("备注")}
+                  onClick={() => setCommenting((s) => new Set(s).add(ids[i]))}><MessageSquareText size={14} /></Button>
+                <Button variant="danger" size="sm" onClick={() => setRules(p.rules.filter((_, j) => j !== i))} aria-label={tr("删除")}><Trash2 size={14} /></Button>
+              </span>
             </div>
+            {isLogical(r.type) && (
+              <ConditionsEditor rule={r} ruleSets={p.ruleSets} depth={1} onChange={(rules) => patch(i, { rules })} />
+            )}
             </div>
           )}
         />
@@ -194,14 +194,15 @@ function RuleSetsSection({ profile: p, update }: { profile: EditableProfile; upd
   const [edit, setEdit] = useState<{ index: number; rs: RuleSet } | null>(null);
   const [presets, setPresets] = useState(false);
   const [mirror, setMirror] = useState(false);
-  const usedBy = (name: string) => p.rules.filter((r) => r.type === "RULE-SET" && r.value === name).length;
+  const usedBy = (name: string) => p.rules.filter((r) => usesRuleSet(r, name)).length;
 
   const save = () => {
     if (!edit) return;
     const old = p.ruleSets[edit.index];
     update((o) => {
       const ruleSets = edit.index < 0 ? [...o.ruleSets, edit.rs] : o.ruleSets.map((x, i) => (i === edit.index ? edit.rs : x));
-      const rules = old && old.name !== edit.rs.name ? o.rules.map((r) => (r.type === "RULE-SET" && r.value === old.name ? { ...r, value: edit.rs.name } : r)) : o.rules;
+      const rename = (r: Rule) => (r.type === "RULE-SET" && r.value === old.name ? { ...r, value: edit.rs.name } : r);
+      const rules = old && old.name !== edit.rs.name ? o.rules.map((r) => mapRule(r, rename)) : o.rules;
       return { ...o, ruleSets, rules };
     });
     setEdit(null);
@@ -209,19 +210,17 @@ function RuleSetsSection({ profile: p, update }: { profile: EditableProfile; upd
 
   return (
     <section className="space-y-2">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="font-medium">{tr("规则集")}</h3>
-          <p className="text-xs text-zinc-500">
-            {tr("远程规则列表。Surge / Loon 使用 Surge 地址，Stash / Clash Meta / FlClash 使用 Stash 地址；sing-box 与 Quantumult X 由本服务的规则集镜像转换格式后提供（sing-box 也可单独填写 .srs 地址）。")}
-          </p>
-        </div>
+      <SectionHeader>
+        <h3 className="font-medium">{tr("规则集")}</h3>
         <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="ghost" onClick={() => setMirror(true)} title={tr("查看镜像缓存的规则集")}><DatabaseZap size={14} /> {tr("镜像")}</Button>
           <Button size="sm" onClick={() => setPresets(true)}>{tr("从预设添加")}</Button>
           <Button size="sm" onClick={() => setEdit({ index: -1, rs: { name: "", behavior: "classical", stashFormat: "yaml", interval: 86400 } })}><Plus size={14} /> {tr("自定义")}</Button>
         </div>
-      </div>
+      </SectionHeader>
+      <p className="text-xs text-zinc-500">
+        {tr("远程规则列表。Surge / Loon 使用 Surge 地址，Stash / Clash Meta / FlClash 使用 Stash 地址；sing-box 与 Quantumult X 由本服务的规则集镜像转换格式后提供（sing-box 也可单独填写 .srs 地址）。")}
+      </p>
       <div className="space-y-1 pb-1">
         <Toggle checked={!!p.general?.mirrorRules} onChange={(v) => update((o) => ({ ...o, general: { ...o.general, mirrorRules: v || undefined } }))} label={tr("所有客户端都通过本服务镜像加载规则集")} />
         <p className="text-xs text-zinc-500">
@@ -231,24 +230,25 @@ function RuleSetsSection({ profile: p, update }: { profile: EditableProfile; upd
       <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {p.ruleSets.length === 0 && <div className="p-4 text-center text-sm text-zinc-500">{tr("没有规则集")}</div>}
         {p.ruleSets.map((rs, i) => (
-          <div key={rs.name + i} className="flex items-center gap-3 px-3 py-2 text-sm">
-            <span className="w-32 shrink-0 truncate font-medium">{rs.name}</span>
+          <div key={rs.name + i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm sm:flex-nowrap">
+            <span className="min-w-0 flex-1 truncate font-medium sm:w-32 sm:flex-none sm:shrink-0">{rs.name}</span>
             <Badge>{rs.behavior}</Badge>
-            <span className="flex min-w-0 flex-1 flex-wrap gap-1">
+            <span className="order-last flex w-full min-w-0 flex-wrap gap-1 sm:order-none sm:w-auto sm:flex-1">
               <Badge color={rs.surgeUrl ? "green" : "red"}>Surge / Loon</Badge>
               <Badge color={rs.stashUrl ? "green" : "red"}>Stash / Clash</Badge>
               {rs.singboxUrl
                 ? <Badge color="green">sing-box</Badge>
                 : <span title={tr("由本服务的规则集镜像转换格式后提供")}><Badge color={rs.surgeUrl || rs.stashUrl ? "indigo" : "red"}>{tr("sing-box / QX（镜像）")}</Badge></span>}
+              <span className="self-center text-xs text-zinc-500 whitespace-nowrap sm:hidden">{usedBy(rs.name) ? tr("被 {0} 条规则引用", usedBy(rs.name)) : tr("未被引用")}</span>
             </span>
-            <span className="text-xs text-zinc-500 whitespace-nowrap" title={tr("「规则」列表中有几条规则使用了这个规则集（不是规则集文件里的条目数）")}>
+            <span className="hidden text-xs text-zinc-500 whitespace-nowrap sm:inline" title={tr("「规则」列表中有几条规则使用了这个规则集（不是规则集文件里的条目数）")}>
               {usedBy(rs.name) ? tr("被 {0} 条规则引用", usedBy(rs.name)) : tr("未被引用")}
             </span>
             <Button size="sm" variant="ghost" onClick={() => setEdit({ index: i, rs: { ...rs } })}>{tr("编辑")}</Button>
             <Button size="sm" variant="danger" onClick={() => {
               const n = usedBy(rs.name);
               if (n && !confirm(tr("{0} 条规则使用「{1}」，删除规则集会同时删除这些规则。", n, rs.name))) return;
-              update((o) => ({ ...o, ruleSets: o.ruleSets.filter((_, j) => j !== i), rules: o.rules.filter((r) => !(r.type === "RULE-SET" && r.value === rs.name)) }));
+              update((o) => ({ ...o, ruleSets: o.ruleSets.filter((_, j) => j !== i), rules: o.rules.filter((r) => !usesRuleSet(r, rs.name)) }));
             }}><Trash2 size={14} /></Button>
           </div>
         ))}
@@ -367,5 +367,97 @@ function PresetPicker({ open, onClose, existing, policies, onAdd }: {
         {sel.length > 0 && <p className="text-xs text-zinc-500">{tr("已选：")}{sel.join(tr("、"))}</p>}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A section title with its actions. It pins below the editor header while its section
+ * scrolls by (the editor sets --sticky-h to the header's height).
+ */
+function SectionHeader({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky z-20 -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8 dark:border-zinc-800 dark:bg-zinc-950/95"
+      style={{ top: "var(--sticky-h, 0px)" }}>
+      {children}
+    </div>
+  );
+}
+
+/** Rule types whose rules take no-resolve. */
+const noResolveTypes = ["IP-CIDR", "IP-CIDR6", "IP-ASN", "GEOIP", "RULE-SET"];
+
+const logicalHint = (t: string) =>
+  t === "AND" ? tr("以下条件全部满足时匹配") : t === "OR" ? tr("以下任一条件满足时匹配") : tr("以下条件不满足时匹配");
+
+/**
+ * The fields to change when a rule or condition switches type. Turning a plain rule into
+ * AND / OR / NOT keeps it as the first condition; leaving AND / OR / NOT drops the conditions.
+ */
+function changeType(r: Rule, type: string): Partial<Rule> {
+  if (isLogical(type)) {
+    const conds: Rule[] = isLogical(r.type) ? (r.rules ?? [])
+      : [{ type: r.type === "FINAL" ? "DOMAIN-SUFFIX" : r.type, value: r.type === "FINAL" ? "" : r.value, policy: "", noResolve: r.noResolve }];
+    return { type, value: "", noResolve: undefined, rules: type === "NOT" ? conds.slice(0, 1) : conds };
+  }
+  return { type, value: "", rules: undefined };
+}
+
+/** The value control of a plain rule or condition: a rule set or protocol picker, or a text input. */
+function RuleValue({ r, ruleSets, onChange }: { r: Rule; ruleSets: RuleSet[]; onChange: (v: Partial<Rule>) => void }) {
+  if (r.type === "RULE-SET") {
+    return (
+      <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => onChange({ value: e.target.value })}>
+        <option value="">{tr("选择规则集")}</option>
+        {ruleSets.map((s) => <option key={s.name}>{s.name}</option>)}
+      </Select>
+    );
+  }
+  if (r.type === "PROTOCOL") {
+    return (
+      <Select className="h-8 min-w-0 flex-1 text-xs" value={r.value} onChange={(e) => onChange({ value: e.target.value })}>
+        <option value="">{tr("选择协议")}</option>
+        {protocolValues.map((v) => <option key={v}>{v}</option>)}
+      </Select>
+    );
+  }
+  return <Input className="h-8 min-w-0 flex-1 font-mono text-xs" value={r.value} onChange={(e) => onChange({ value: e.target.value })} placeholder={r.type === "GEOIP" ? "CN" : "example.com"} />;
+}
+
+/** Edits the conditions of an AND / OR / NOT rule; conditions may be logical themselves. */
+function ConditionsEditor({ rule, ruleSets, depth, onChange }: { rule: Rule; ruleSets: RuleSet[]; depth: number; onChange: (rules: Rule[]) => void }) {
+  const conds = rule.rules ?? [];
+  const types = ruleTypes.filter((t) => t !== "FINAL" && (depth < maxLogicalDepth || !isLogical(t)));
+  const set = (j: number, v: Partial<Rule>) => onChange(conds.map((c, k) => (k === j ? { ...c, ...v } : c)));
+  const canAdd = rule.type !== "NOT" || conds.length === 0;
+  return (
+    <div className="mt-2 space-y-1.5 border-l-2 border-indigo-200 pl-3 sm:ml-11 dark:border-indigo-900">
+      {conds.length === 0 && <p className="text-xs text-amber-600">{tr("还没有条件，至少添加一个才能保存。")}</p>}
+      {conds.map((c, j) => (
+        <div key={j}>
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+            <Select className="h-8 min-w-0 flex-1 text-xs sm:w-40 sm:flex-none sm:shrink-0" value={c.type} onChange={(e) => set(j, changeType(c, e.target.value))}>
+              {types.map((t) => <option key={t}>{t}</option>)}
+            </Select>
+            <div className="order-2 flex w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+              {isLogical(c.type)
+                ? <span className="min-w-0 flex-1 truncate text-xs text-zinc-500" title={ruleExpr(c)}>{logicalHint(c.type)}</span>
+                : <RuleValue r={c} ruleSets={ruleSets} onChange={(v) => set(j, v)} />}
+            </div>
+            {noResolveTypes.includes(c.type) && (
+              <label className="order-3 flex items-center gap-1 text-xs whitespace-nowrap sm:order-none"><input type="checkbox" checked={!!c.noResolve} onChange={(e) => set(j, { noResolve: e.target.checked || undefined })} />no-resolve</label>
+            )}
+            <Button variant="ghost" size="sm" className="order-1 text-zinc-400 sm:order-none" aria-label={tr("删除条件")} title={tr("删除条件")}
+              onClick={() => onChange(conds.filter((_, k) => k !== j))}><X size={14} /></Button>
+          </div>
+          {isLogical(c.type) && <ConditionsEditor rule={c} ruleSets={ruleSets} depth={depth + 1} onChange={(rules) => set(j, { rules })} />}
+        </div>
+      ))}
+      {canAdd && (
+        <Button variant="ghost" size="sm" className="text-indigo-600 dark:text-indigo-400"
+          onClick={() => onChange([...conds, { type: "DOMAIN-SUFFIX", value: "", policy: "" }])}>
+          <Plus size={14} /> {tr("添加条件")}
+        </Button>
+      )}
+    </div>
   );
 }

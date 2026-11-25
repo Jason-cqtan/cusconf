@@ -36,7 +36,7 @@ export default function SourcesPage() {
       {items.length === 0 ? (
         <Empty>{tr("还没有订阅源。添加一个机场订阅或自建节点开始。")}</Empty>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {items.map((s) => (
             <Card key={s.id} className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">

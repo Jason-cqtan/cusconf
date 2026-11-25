@@ -9,7 +9,7 @@ export function TargetPicker({ value, onChange, caps }: { value: Target; onChang
   const latest = ci?.platforms[value.platform]?.latest ?? "";
   const single = platformList(ci).length === 1;
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <Field label={tr("客户端")}>
         <Select value={value.client} onChange={(e) => {
           const client = e.target.value as Client;

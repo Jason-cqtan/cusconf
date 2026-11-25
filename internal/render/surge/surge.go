@@ -542,37 +542,51 @@ func ruleLine(c *render.Config, r profile.Rule, w *render.Warnings) (string, boo
 	switch r.Type {
 	case "FINAL", "MATCH":
 		return "FINAL," + policy + ",dns-failed", true
+	}
+	if profile.IsLogical(r.Type) {
+		expr, ok := render.LogicalRule(c, r, w, func(s profile.Rule) (render.Cond, bool) { return cond(c, s, w) })
+		if !ok {
+			return "", false
+		}
+		return expr + "," + policy, true
+	}
+	cd, ok := cond(c, r, w)
+	if !ok {
+		return "", false
+	}
+	line := fmt.Sprintf("%s,%s,%s", cd.Type, cd.Value, policy)
+	if cd.NoResolve {
+		line += ",no-resolve"
+	}
+	if r.Type == "RULE-SET" {
+		if rs := c.RuleSets[r.Value]; rs.Interval > 0 {
+			line += fmt.Sprintf(",update-interval=%d", rs.Interval)
+		}
+	}
+	return line, true
+}
+
+// cond converts a plain (non-logical) rule into what Surge writes: rule sets become
+// their URL (DOMAIN-SET for domain lists), PROTOCOL values are mapped.
+func cond(c *render.Config, r profile.Rule, w *render.Warnings) (render.Cond, bool) {
+	switch r.Type {
 	case "RULE-SET":
 		rs := c.RuleSets[r.Value]
 		u, _ := c.RuleSetURL(rs, rs.SurgeURL, "list")
 		if u == "" {
 			w.Add("rule", r.Value, "rule set has no Surge URL; skipped")
-			return "", false
+			return render.Cond{}, false
 		}
 		kind := "RULE-SET"
 		if rs.Behavior == "domain" {
 			kind = "DOMAIN-SET"
 		}
-		line := fmt.Sprintf("%s,%s,%s", kind, u, policy)
-		if rs.Behavior == "ipcidr" || r.NoResolve {
-			line += ",no-resolve"
-		}
-		if rs.Interval > 0 {
-			line += fmt.Sprintf(",update-interval=%d", rs.Interval)
-		}
-		return line, true
+		return render.Cond{Type: kind, Value: u, NoResolve: rs.Behavior == "ipcidr" || r.NoResolve}, true
 	case "PROTOCOL":
 		t, v, ok := render.ProtocolRule(c, r.Value, w)
-		if !ok {
-			return "", false
-		}
-		return fmt.Sprintf("%s,%s,%s", t, v, policy), true
+		return render.Cond{Type: t, Value: v}, ok
 	}
-	line := fmt.Sprintf("%s,%s,%s", r.Type, r.Value, policy)
-	if r.NoResolve {
-		line += ",no-resolve"
-	}
-	return line, true
+	return render.Cond{Type: r.Type, Value: r.Value, NoResolve: r.NoResolve}, true
 }
 
 type rawSection struct {

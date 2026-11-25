@@ -675,7 +675,7 @@ func domainMatch(d string) obj {
 var ruleField = map[string]string{
 	"DOMAIN": "domain", "DOMAIN-SUFFIX": "domain_suffix", "DOMAIN-KEYWORD": "domain_keyword", "DOMAIN-REGEX": "domain_regex",
 	"IP-CIDR": "ip_cidr", "IP-CIDR6": "ip_cidr", "SRC-IP-CIDR": "source_ip_cidr",
-	"PROCESS-NAME": "process_name", "PROCESS-PATH": "process_path",
+	"PROCESS-NAME": "process_name", "PROCESS-PATH": "process_path", "PROCESS-PATH-REGEX": "process_path_regex",
 	"DST-PORT": "port", "SRC-PORT": "source_port", "NETWORK": "network",
 }
 
@@ -713,9 +713,7 @@ func routeConfig(c *render.Config, groups []render.Group, proxyTag string, w *re
 			}
 			action.force("outbound", policy)
 		}
-		var m obj
-		switch t := strings.ToUpper(r.Type); t {
-		case "FINAL", "MATCH":
+		if t := strings.ToUpper(r.Type); t == "FINAL" || t == "MATCH" {
 			if strings.EqualFold(policy, "REJECT") {
 				w.Add("rule", "FINAL", "REJECT as final is not supported by sing-box; using DIRECT")
 				final = directTag
@@ -723,64 +721,23 @@ func routeConfig(c *render.Config, groups []render.Group, proxyTag string, w *re
 				final = action[0].v.(string)
 			}
 			continue
-		case "RULE-SET":
-			rs := c.RuleSets[r.Value]
-			u, mirrored := c.RuleSetURL(rs, rs.SingboxURL, "json")
-			if u == "" {
-				w.Add("rule", r.Value, "rule set has no sing-box URL and the mirror is unavailable; skipped")
+		}
+		var m obj
+		if profile.IsLogical(r.Type) {
+			if !c.Has("rule.logical") {
+				w.Add("rule", r.Expr(), "logical rules %s; skipped", c.Req("rule.logical"))
 				continue
 			}
-			format := "source"
-			detour := directTag
-			if !mirrored {
-				if strings.HasSuffix(strings.SplitN(u, "?", 2)[0], ".srs") {
-					format = "binary"
-				}
-				detour = proxyTag
-			}
-			addSet(rs.Name, u, format, detour, rs.Interval)
-			m = obj{{"rule_set", []string{rs.Name}}}
-		case "GEOIP", "GEOSITE":
-			v := strings.ToLower(r.Value)
-			if t == "GEOIP" && v == "lan" {
-				m = obj{{"ip_is_private", true}}
-				break
-			}
-			kind := strings.ToLower(t)
-			tag := kind + "-" + v
-			addSet(tag, fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-%s/rule-set/%s.srs", kind, tag), "binary", proxyTag, 0)
-			m = obj{{"rule_set", []string{tag}}}
-		case "DOMAIN-WILDCARD":
-			m = obj{{"domain_regex", []string{WildcardRegex(r.Value)}}}
-		case "PROTOCOL":
-			t, v, ok := render.ProtocolRule(c, r.Value, w)
-			if !ok {
+			var ok bool
+			if m, ok = logicalMatcher(r, func(s profile.Rule) (obj, bool) { return matcher(c, s, proxyTag, addSet, w) }); !ok {
+				w.Add("rule", r.Expr(), "a condition cannot be written for sing-box; logical rule skipped")
 				continue
 			}
-			if t == "NETWORK" {
-				m = obj{{"network", v}}
-			} else {
-				m = obj{{"protocol", []string{v}}}
-			}
-		default:
-			f, ok := ruleField[t]
-			if !ok {
-				w.Add("rule", r.Type+","+r.Value, "rule type %s not supported by sing-box; skipped", r.Type)
+		} else {
+			var ok bool
+			if m, ok = matcher(c, r, proxyTag, addSet, w); !ok {
 				continue
 			}
-			var v any = []string{r.Value}
-			switch f {
-			case "port", "source_port":
-				n, err := strconv.Atoi(r.Value)
-				if err != nil {
-					w.Add("rule", r.Type+","+r.Value, "port ranges are not supported here; skipped")
-					continue
-				}
-				v = []int{n}
-			case "network":
-				v = strings.ToLower(r.Value)
-			}
-			m = obj{{f, v}}
 		}
 		rules = appendRule(rules, append(m, action...))
 	}
@@ -789,6 +746,106 @@ func routeConfig(c *render.Config, groups []render.Group, proxyTag string, w *re
 		w.Add("rule", "FINAL", "no final rule; using %s", final)
 	}
 	return obj{{"rules", rules}, {"final", final}, {"auto_detect_interface", true}}, sets
+}
+
+// matcher converts a plain rule into sing-box match fields, declaring the rule sets it
+// uses through addSet. It returns ok=false after adding a warning when sing-box cannot
+// match it.
+func matcher(c *render.Config, r profile.Rule, proxyTag string, addSet func(tag, u, format, detour string, interval int), w *render.Warnings) (obj, bool) {
+	switch t := strings.ToUpper(r.Type); t {
+	case "RULE-SET":
+		rs := c.RuleSets[r.Value]
+		u, mirrored := c.RuleSetURL(rs, rs.SingboxURL, "json")
+		if u == "" {
+			w.Add("rule", r.Value, "rule set has no sing-box URL and the mirror is unavailable; skipped")
+			return nil, false
+		}
+		format := "source"
+		detour := directTag
+		if !mirrored {
+			if strings.HasSuffix(strings.SplitN(u, "?", 2)[0], ".srs") {
+				format = "binary"
+			}
+			detour = proxyTag
+		}
+		addSet(rs.Name, u, format, detour, rs.Interval)
+		return obj{{"rule_set", []string{rs.Name}}}, true
+	case "GEOIP", "GEOSITE":
+		v := strings.ToLower(r.Value)
+		if t == "GEOIP" && v == "lan" {
+			return obj{{"ip_is_private", true}}, true
+		}
+		kind := strings.ToLower(t)
+		tag := kind + "-" + v
+		addSet(tag, fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-%s/rule-set/%s.srs", kind, tag), "binary", proxyTag, 0)
+		return obj{{"rule_set", []string{tag}}}, true
+	case "DOMAIN-WILDCARD":
+		return obj{{"domain_regex", []string{WildcardRegex(r.Value)}}}, true
+	case "PROTOCOL":
+		t, v, ok := render.ProtocolRule(c, r.Value, w)
+		if !ok {
+			return nil, false
+		}
+		if t == "NETWORK" {
+			return obj{{"network", v}}, true
+		}
+		return obj{{"protocol", []string{v}}}, true
+	}
+	f, ok := ruleField[strings.ToUpper(r.Type)]
+	if !ok {
+		w.Add("rule", r.Type+","+r.Value, "rule type %s not supported by sing-box; skipped", r.Type)
+		return nil, false
+	}
+	var v any = []string{r.Value}
+	switch f {
+	case "port", "source_port":
+		n, err := strconv.Atoi(r.Value)
+		if err != nil {
+			w.Add("rule", r.Type+","+r.Value, "port ranges are not supported here; skipped")
+			return nil, false
+		}
+		v = []int{n}
+	case "network":
+		v = strings.ToLower(r.Value)
+	}
+	return obj{{f, v}}, true
+}
+
+// logicalMatcher converts AND / OR into a sing-box logical rule and NOT into its single
+// condition with "invert". Nested logical rules nest the same way.
+func logicalMatcher(r profile.Rule, plain func(profile.Rule) (obj, bool)) (obj, bool) {
+	sub := func(s profile.Rule) (obj, bool) {
+		if profile.IsLogical(s.Type) {
+			return logicalMatcher(s, plain)
+		}
+		return plain(s)
+	}
+	if strings.EqualFold(r.Type, "NOT") {
+		if len(r.Rules) != 1 {
+			return nil, false
+		}
+		m, ok := sub(r.Rules[0])
+		if !ok {
+			return nil, false
+		}
+		if i, has := m.get("invert"); has { // NOT of NOT
+			m = append(m[:i:i], m[i+1:]...)
+			return m, true
+		}
+		return append(m, kv{"invert", true}), true
+	}
+	var subs []obj
+	for _, s := range r.Rules {
+		m, ok := sub(s)
+		if !ok {
+			return nil, false
+		}
+		subs = append(subs, m)
+	}
+	if len(subs) == 0 {
+		return nil, false
+	}
+	return obj{{"type", "logical"}, {"mode", strings.ToLower(r.Type)}, {"rules", subs}}, true
 }
 
 // appendRule adds a rule, folding it into the previous one when both match on the

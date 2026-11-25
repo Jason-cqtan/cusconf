@@ -159,18 +159,16 @@ func Render(c *render.Config) render.Result {
 	var comments []string // per rule, YAML head comment
 	hasFinal := false
 	used := map[string]bool{}
-	for _, r := range c.Rules {
-		n := len(rules)
+	// cond converts a plain rule into its Clash form, declaring the rule provider a
+	// RULE-SET refers to.
+	cond := func(r profile.Rule) (render.Cond, bool) {
 		switch r.Type {
-		case "FINAL", "MATCH":
-			hasFinal = true
-			rules = append(rules, "MATCH,"+r.Policy)
 		case "RULE-SET":
 			rs := c.RuleSets[r.Value]
 			u, mirrored := c.RuleSetURL(rs, rs.StashURL, "txt")
 			if u == "" {
 				w.Add("rule", r.Value, "rule set has no Clash/Stash URL; skipped")
-				continue
+				return render.Cond{}, false
 			}
 			format := or(rs.StashFormat, "yaml")
 			if mirrored {
@@ -191,20 +189,32 @@ func Render(c *render.Config) render.Result {
 				pv.force("interval", or0(rs.Interval, 86400))
 				providers.force(rs.Name, pv)
 			}
-			line := "RULE-SET," + rs.Name + "," + r.Policy
-			if rs.Behavior == "ipcidr" || r.NoResolve {
-				line += ",no-resolve"
-			}
-			rules = append(rules, line)
+			return render.Cond{Type: "RULE-SET", Value: rs.Name, NoResolve: rs.Behavior == "ipcidr" || r.NoResolve}, true
 		case "PROTOCOL":
 			t, v, ok := render.ProtocolRule(c, r.Value, &w)
+			return render.Cond{Type: t, Value: v}, ok
+		}
+		return render.Cond{Type: r.Type, Value: r.Value, NoResolve: r.NoResolve}, true
+	}
+	for _, r := range c.Rules {
+		n := len(rules)
+		switch {
+		case r.Type == "FINAL" || r.Type == "MATCH":
+			hasFinal = true
+			rules = append(rules, "MATCH,"+r.Policy)
+		case profile.IsLogical(r.Type):
+			expr, ok := render.LogicalRule(c, r, &w, cond)
 			if !ok {
 				continue
 			}
-			rules = append(rules, fmt.Sprintf("%s,%s,%s", t, v, r.Policy))
+			rules = append(rules, expr+","+r.Policy)
 		default:
-			line := fmt.Sprintf("%s,%s,%s", r.Type, r.Value, r.Policy)
-			if r.NoResolve {
+			cd, ok := cond(r)
+			if !ok {
+				continue
+			}
+			line := fmt.Sprintf("%s,%s,%s", cd.Type, cd.Value, r.Policy)
+			if cd.NoResolve {
 				line += ",no-resolve"
 			}
 			rules = append(rules, line)

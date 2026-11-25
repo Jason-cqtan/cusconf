@@ -2,12 +2,13 @@ import { useMemo, useState } from "react";
 import type { Rule, RuleSet } from "../api";
 import { Badge, Button, Field, Modal, Select, Textarea, Toggle } from "../components/ui";
 import { tr } from "../i18n";
+import { conditionsError, isLogical, logicalTypes, mapRule, parseConditions, ruleExpr, splitTop } from "./logicalRules";
 
 /** Rule types the editor offers. Imported lines may use any of them. */
 export const ruleTypes = [
   "RULE-SET", "DOMAIN-SET", "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD",
   "IP-CIDR", "IP-CIDR6", "IP-ASN", "GEOIP", "SRC-IP", "DST-PORT", "IN-PORT",
-  "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT", "URL-REGEX", "PROTOCOL", "FINAL",
+  "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT", "URL-REGEX", "PROTOCOL", ...logicalTypes, "FINAL",
 ];
 
 /**
@@ -19,9 +20,8 @@ export const protocolValues = ["HTTP", "HTTPS", "TLS", "TCP", "UDP", "QUIC", "ST
 const aliases: Record<string, string> = { MATCH: "FINAL", "DEST-PORT": "DST-PORT", "SRC-IP-CIDR": "SRC-IP", "IP6-CIDR": "IP-CIDR6" };
 
 interface Parsed {
+  /** RULE-SET / DOMAIN-SET conditions still hold a URL or a rule set name; the dialog resolves them. */
   rule: Rule;
-  /** Rule set to create for RULE-SET / DOMAIN-SET lines that point to a URL. */
-  newSet?: RuleSet;
   line: number;
 }
 
@@ -30,9 +30,27 @@ interface ParseResult {
   errors: { line: number; text: string; reason: string }[];
 }
 
+class ParseError extends Error {}
+
+/**
+ * Normalizes one plain (non-logical) condition: type aliases, PROTOCOL values, and
+ * domains pasted as links ("http://example.com" loses the scheme and path).
+ */
+function normalize(c: Rule): Rule {
+  const type = aliases[c.type.toUpperCase()] ?? c.type.toUpperCase();
+  if (!ruleTypes.includes(type) || type === "FINAL" || isLogical(type)) throw new ParseError(tr("不支持的规则类型 {0}", c.type));
+  if (type === "PROTOCOL" && !protocolValues.includes(c.value.toUpperCase())) {
+    throw new ParseError(tr("不支持的协议 {0}，可用：{1}", c.value, protocolValues.join(" / ")));
+  }
+  const value = type === "PROTOCOL" ? c.value.toUpperCase()
+    : type.startsWith("DOMAIN") && type !== "DOMAIN-SET" ? c.value.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "") : c.value;
+  return { ...c, type, value };
+}
+
 /**
  * Parses Surge / Clash style rule lines:
  *   TYPE,VALUE,POLICY[,no-resolve][,other options]
+ *   AND,((TYPE,VALUE),(OR,((TYPE,VALUE),(TYPE,VALUE)))),POLICY   (also OR / NOT)
  *   FINAL,POLICY  /  MATCH,POLICY
  * Accepts YAML list items ("- DOMAIN,..."), and skips blank lines and [Section] headers.
  * Comment lines ("# …") are kept as the comment of the rule that follows them.
@@ -55,47 +73,46 @@ export function parseRules(text: string): ParseResult {
     if (!t) return;
     if (/^\[.*\]$/.test(t)) { note = []; return; }
     t = t.replace(/\s+(#|\/\/).*$/, ""); // trailing comment
-    const parts = t.split(",").map((x) => x.trim());
-    let type = parts[0].toUpperCase();
-    type = aliases[type] ?? type;
-    if (!ruleTypes.includes(type)) {
-      errors.push({ line, text: raw.trim(), reason: tr("不支持的规则类型 {0}", parts[0]) });
+    const head = t.split(",")[0].trim().toUpperCase();
+    const fail = (reason: string) => void errors.push({ line, text: raw.trim(), reason });
+    if (isLogical(head)) {
+      // Commas inside the conditions do not separate fields.
+      const parts = splitTop(t);
+      if (!parts[1] || !parts[2]) return fail(tr("格式应为 类型,((条件),(条件)),策略"));
+      try {
+        const rule: Rule = { type: head, value: "", policy: parts[2], rules: parseConditions(parts[1], normalize) };
+        const e = conditionsError(rule);
+        if (e) return fail(e);
+        push({ line, rule });
+      } catch (e) {
+        fail((e as Error).message);
+      }
       return;
     }
+    const parts = t.split(",").map((x) => x.trim());
+    const type = aliases[head] ?? head;
+    if (!ruleTypes.includes(type)) return fail(tr("不支持的规则类型 {0}", parts[0]));
     if (type === "FINAL") {
-      if (!parts[1]) return void errors.push({ line, text: raw.trim(), reason: tr("缺少策略") });
+      if (!parts[1]) return fail(tr("缺少策略"));
       push({ line, rule: { type, value: "", policy: parts[1] } });
       return;
     }
-    if (parts.length < 3 || !parts[1] || !parts[2]) {
-      errors.push({ line, text: raw.trim(), reason: tr("格式应为 类型,值,策略") });
-      return;
+    if (parts.length < 3 || !parts[1] || !parts[2]) return fail(tr("格式应为 类型,值,策略"));
+    try {
+      const noResolve = parts.slice(3).some((o) => o.toLowerCase() === "no-resolve") || undefined;
+      push({ line, rule: normalize({ type, value: parts[1], policy: parts[2], noResolve }) });
+    } catch (e) {
+      fail((e as Error).message);
     }
-    if (type === "PROTOCOL" && !protocolValues.includes(parts[1].toUpperCase())) {
-      errors.push({ line, text: raw.trim(), reason: tr("不支持的协议 {0}，可用：{1}", parts[1], protocolValues.join(" / ")) });
-      return;
-    }
-    const opts = parts.slice(3).map((o) => o.toLowerCase());
-    // Domains pasted as links ("http://example.com") lose the scheme and path.
-    const value = type === "PROTOCOL" ? parts[1].toUpperCase()
-      : type.startsWith("DOMAIN") && type !== "DOMAIN-SET" ? parts[1].replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "") : parts[1];
-    const rule: Rule = { type, value, policy: parts[2], noResolve: opts.includes("no-resolve") || undefined };
-    if (type === "RULE-SET" || type === "DOMAIN-SET") {
-      if (!/^https?:\/\//i.test(parts[1])) {
-        // A rule-set name; it must already exist in the profile (checked by the caller).
-        push({ line, rule: { ...rule, type: "RULE-SET" } });
-        return;
-      }
-      const url = parts[1];
-      const name = decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() ?? "rules").replace(/\.(list|txt|yaml|yml|conf)$/i, "") || "rules";
-      const behavior = type === "DOMAIN-SET" ? "domain" : "classical";
-      const newSet: RuleSet = { name, behavior, surgeUrl: url, stashUrl: url, stashFormat: /\.ya?ml$/i.test(url.split(/[?#]/)[0]) ? "yaml" : "text", interval: 86400 };
-      push({ line, rule: { ...rule, type: "RULE-SET", value: name }, newSet });
-      return;
-    }
-    push({ line, rule });
   });
   return { items, errors };
+}
+
+/** The rule set a RULE-SET / DOMAIN-SET pointing to a URL becomes (named after the file). */
+function setForURL(type: string, url: string): RuleSet {
+  const name = decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() ?? "rules").replace(/\.(list|txt|yaml|yml|conf)$/i, "") || "rules";
+  const behavior = type === "DOMAIN-SET" ? "domain" : "classical";
+  return { name, behavior, surgeUrl: url, stashUrl: url, stashFormat: /\.ya?ml$/i.test(url.split(/[?#]/)[0]) ? "yaml" : "text", interval: 86400 };
 }
 
 export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing, onImport }: {
@@ -122,7 +139,7 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
   const policyFor = (p: string) => exact(p) ?? mapping[p] ?? guess(p);
 
   const setNames = new Set(ruleSets.map((r) => r.name));
-  const key = (r: Rule) => `${r.type}|${r.value.toLowerCase()}`;
+  const key = (r: Rule) => ruleExpr(r).toLowerCase();
   const have = new Set(existing.map(key));
   const result = useMemo(() => {
     const rules: Rule[] = [];
@@ -130,21 +147,33 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
     const skipped: string[] = [];
     const seen = new Set(have);
     const taken = new Set(setNames);
+    // Resolves rule-set references in the rule and its conditions: a URL reuses the rule set
+    // with that URL or creates one, a name must exist. Returns the missing name, if any.
+    const resolveSets = (r: Rule): [Rule, string | null] => {
+      let missing: string | null = null;
+      const out = mapRule(r, (s) => {
+        if (s.type !== "RULE-SET" && s.type !== "DOMAIN-SET") return s;
+        if (!/^https?:\/\//i.test(s.value)) {
+          if (!taken.has(s.value)) missing = s.value;
+          return { ...s, type: "RULE-SET" };
+        }
+        const known = [...ruleSets, ...newSets].find((x) => x.surgeUrl === s.value);
+        if (known) return { ...s, type: "RULE-SET", value: known.name };
+        const set = setForURL(s.type, s.value);
+        let name = set.name;
+        for (let n = 2; taken.has(name); n++) name = `${set.name} ${n}`;
+        newSets.push({ ...set, name });
+        taken.add(name);
+        return { ...s, type: "RULE-SET", value: name };
+      });
+      return [out, missing];
+    };
     for (const it of parsed.items) {
-      const r = { ...it.rule, policy: policyFor(it.rule.policy) };
-      if (r.type === "FINAL") {
-        if (existing.some((x) => x.type === "FINAL")) { skipped.push(tr("第 {0} 行：已有 FINAL 规则", it.line)); continue; }
-      } else if (r.type === "RULE-SET" && !it.newSet && !taken.has(r.value)) {
-        skipped.push(tr("第 {0} 行：规则集「{1}」不存在", it.line, r.value));
-        continue;
-      }
-      if (it.newSet) {
-        let name = it.newSet.name;
-        for (let n = 2; taken.has(name) && !ruleSets.some((s) => s.name === name && s.surgeUrl === it.newSet!.surgeUrl); n++) name = `${it.newSet.name} ${n}`;
-        if (!taken.has(name)) { newSets.push({ ...it.newSet, name }); taken.add(name); }
-        r.value = name;
-      }
-      if (skipDup && seen.has(key(r))) { skipped.push(tr("第 {0} 行：重复的 {1},{2}", it.line, r.type, r.value)); continue; }
+      if (it.rule.type === "FINAL" && existing.some((x) => x.type === "FINAL")) { skipped.push(tr("第 {0} 行：已有 FINAL 规则", it.line)); continue; }
+      const [resolved, missing] = resolveSets(it.rule);
+      if (missing) { skipped.push(tr("第 {0} 行：规则集「{1}」不存在", it.line, missing)); continue; }
+      const r = { ...resolved, policy: policyFor(it.rule.policy) };
+      if (skipDup && seen.has(key(r))) { skipped.push(tr("第 {0} 行：重复的 {1},{2}", it.line, r.type, r.value || ruleExpr(r))); continue; }
       seen.add(key(r));
       rules.push(r);
     }
@@ -170,13 +199,13 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
       }
     >
       <div className="space-y-4">
-        <Field label={tr("粘贴规则")} hint={tr("每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]。# 开头的注释行会作为下一条规则的备注保留，并写入生成的配置。")}>
+        <Field label={tr("粘贴规则")} hint={tr("每行一条，Surge / Clash 格式均可：类型,值,策略[,no-resolve]；逻辑规则写作 AND,((条件),(条件)),策略（也支持 OR / NOT，可嵌套）。# 开头的注释行会作为下一条规则的备注保留，并写入生成的配置。")}>
           <Textarea
             rows={8}
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={tr("DOMAIN,code.example.com,DIRECT\nDOMAIN-SUFFIX,example.com,节点选择\nIP-CIDR,10.0.0.0/8,DIRECT,no-resolve\nRULE-SET,https://example.com/rules.list,节点选择")}
+            placeholder={tr("DOMAIN,code.example.com,DIRECT\nDOMAIN-SUFFIX,example.com,节点选择\nIP-CIDR,10.0.0.0/8,DIRECT,no-resolve\nRULE-SET,https://example.com/rules.list,节点选择\nAND,((PROTOCOL,STUN),(DOMAIN-SUFFIX,example.com)),REJECT")}
           />
         </Field>
 
@@ -215,7 +244,7 @@ export function ImportRulesDialog({ open, onClose, policies, ruleSets, existing,
                 {result.rules.map((r, i) => (
                   <div key={i} className="flex gap-3 border-b border-zinc-100 dark:border-zinc-800 px-3 py-1 font-mono text-xs last:border-0">
                     <span className="w-28 shrink-0 text-zinc-500">{r.type}</span>
-                    <span className="min-w-0 flex-1 truncate">{r.value}</span>
+                    <span className="min-w-0 flex-1 truncate" title={isLogical(r.type) ? ruleExpr(r) : undefined}>{isLogical(r.type) ? ruleExpr(r).slice(r.type.length + 1) : r.value}</span>
                     <span className="shrink-0">{r.policy}{r.noResolve ? " · no-resolve" : ""}</span>
                   </div>
                 ))}
