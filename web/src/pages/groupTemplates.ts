@@ -19,6 +19,11 @@ export interface GroupTemplate {
    * same type and value are left alone.
    */
   rules?: string;
+  /**
+   * Region codes (e.g. "US") the service needs: only the country groups that collect those
+   * regions are offered. Falls back to all country groups when the profile has none of them.
+   */
+  regions?: string[];
   /** Offer DIRECT first (services that usually work without a proxy). */
   direct?: boolean;
   /**
@@ -90,6 +95,23 @@ DOMAIN-SUFFIX,oyunfor.com
 DOMAIN-SUFFIX,xmlbankasi.com
 `;
 
+// Meta's Muse agent (muse.ai). Hosts from the site's CSP: the app and its API / chat sockets
+// on muse.ai and meta.ai, user content CDNs, Meta sign-in and the agent tool sandboxes.
+// Facebook / fbcdn hosts it also loads are left to other rules.
+const museRules = `
+# Muse 主站和下载链接（applink.muse.ai）
+DOMAIN-SUFFIX,muse.ai
+# Meta AI 接口、聊天长连接（gateway / edge-chat / agent.meta.ai）
+DOMAIN-SUFFIX,meta.ai
+# 用户内容 CDN
+DOMAIN-SUFFIX,metaaiusercontent.com
+DOMAIN-SUFFIX,ecto1usercontent.com
+# Meta 账号登录
+DOMAIN-SUFFIX,auth.meta.com
+# 智能体自建工具的沙箱页面
+DOMAIN-SUFFIX,meta-agents-apps.workers.dev
+`;
+
 /** Parses a template's extra rules, routed to `policy`. */
 function extraRules(text: string | undefined, policy: string): EditableRule[] {
   const out: EditableRule[] = [];
@@ -114,6 +136,7 @@ export const groupTemplates: { category: string; items: GroupTemplate[] }[] = [
       { name: "Claude", icon: LOBE + "claude-color.png", ruleSets: ["Claude"], rules: claudeRules, process: proc("/Applications/Claude.app/", "/Applications/Claude.app/Contents/MacOS/Claude") },
       { name: "Gemini", icon: LOBE + "gemini-color.png", ruleSets: ["Gemini"], process: proc("/Applications/Gemini.app", "/Applications/Gemini.app/Contents/MacOS/Gemini") },
       { name: "Grok", icon: LOBE + "grok.png", rules: "DOMAIN-SUFFIX,grok.com\nDOMAIN-SUFFIX,x.ai" },
+      { name: "Muse", icon: LOBE + "meta-color.png", rules: museRules, regions: ["US"] },
       { name: "Copilot", icon: QURE + "Microsoft.png", ruleSets: ["Copilot"] },
     ],
   },
@@ -192,11 +215,16 @@ export function addTemplates(o: EditableProfile, picked: GroupTemplate[]): [Edit
   const ruleSets = [...o.ruleSets];
   const ids: string[] = [];
   // Country groups (香港 … 其他国家): node groups other than 自建.
-  const countries = groups.filter((g) => isNodeGroup(g) && g.nodes?.nodeKind !== "selfhosted").map((g) => g.name);
+  const countryGroups = groups.filter((g) => isNodeGroup(g) && g.nodes?.nodeKind !== "selfhosted");
+  const countries = countryGroups.map((g) => g.name);
+  const offered = (t: GroupTemplate) => {
+    const hit = t.regions?.length ? countryGroups.filter((g) => g.nodes?.regions?.some((r) => t.regions!.includes(r))).map((g) => g.name) : [];
+    return hit.length ? hit : countries;
+  };
   let at = insertIndex(groups);
   for (const t of picked) {
     if (groups.some((g) => g.name === t.name)) continue;
-    const g: EditableGroup = { name: t.name, type: "select", icon: t.icon, members: t.direct ? ["DIRECT", ...countries] : countries, _uid: uid() };
+    const g: EditableGroup = { name: t.name, type: "select", icon: t.icon, members: t.direct ? ["DIRECT", ...offered(t)] : offered(t), _uid: uid() };
     groups = [...groups.slice(0, at), g, ...groups.slice(at)];
     at++;
     ids.push(g._uid!);
